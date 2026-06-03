@@ -269,6 +269,25 @@ def icon(size):
 @app.route("/health")
 def health():
     return jsonify({"status": "running", "voice_id": EL_VOICE_ID, "groq": bool(GROQ_KEY)})
+@app.route("/test-edge")
+def test_edge():
+    if not EDGE_OK:
+        return jsonify({"error": "edge-tts not installed"})
+    import tempfile, os
+    try:
+        tmp = tempfile.mktemp(suffix='.mp3')
+        loop = asyncio.new_event_loop()
+        async def gen():
+            c = edge_tts.Communicate(text="Hello, I am Kitty", voice="en-IN-NeerjaNeural")
+            await c.save(tmp)
+        loop.run_until_complete(gen())
+        loop.close()
+        size = os.path.getsize(tmp) if os.path.exists(tmp) else 0
+        os.unlink(tmp) if os.path.exists(tmp) else None
+        return jsonify({"ok": size > 1000, "file_size": size, "msg": "Edge TTS works!" if size > 1000 else "Edge TTS produced empty file"})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
 @app.route("/test-voice")
 def test_voice():
     """Test ElevenLabs connection — visit /test-voice in browser"""
