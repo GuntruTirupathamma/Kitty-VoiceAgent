@@ -591,11 +591,15 @@ def speak():
     if EDGE_OK:
         edge_path = os.path.join(CACHE_DIR, f"edge_{cache_key}.mp3")
         try:
+            loop = asyncio.new_event_loop()
             async def gen():
                 c = edge_tts.Communicate(text=text, voice="en-IN-NeerjaNeural")
                 await c.save(edge_path)
-            _loop = asyncio.new_event_loop(); _loop.run_until_complete(gen()); _loop.close()
-            return send_file(edge_path, mimetype="audio/mpeg")
+            loop.run_until_complete(gen())
+            loop.close()
+            if os.path.exists(edge_path):
+                print(f"  ✓ Edge TTS: {text[:35]}...")
+                return send_file(edge_path, mimetype="audio/mpeg")
         except Exception as e:
             print(f"  ✗ Edge: {e}")
 
@@ -725,6 +729,4 @@ if __name__ == "__main__":
     print("\n=== Kitty Voice Server ===")
     print("   PC:      http://localhost:5000")
     print("   Android: http://" + ip + ":5000")
-    print("==========================\n")
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    print("======
