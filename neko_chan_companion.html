@@ -628,13 +628,14 @@ body{background:#0d0820;display:flex;align-items:center;justify-content:center;}
 </div>
 
 <!-- NAME OVERLAY -->
-<div class="overlay" id="nameOverlay">
+<div class="overlay" id="nameOverlay" style="display:none;">
   <div class="nc">
     <div class="nc-icon">🐱</div>
     <div class="nc-h">Hey. I'm Kitty.</div>
     <div class="nc-p">I remember things. I notice things. What should I call you?</div>
     <input class="nc-inp" type="text" id="nameInp" placeholder="Your name..." maxlength="24"/>
-    <button class="nc-btn" onclick="saveName()">Let's talk</button>
+    <button class="nc-btn" id="nameBtn" onclick="saveName()">Let's talk</button>
+    <div class="nc-err" id="nameErr"></div>
   </div>
 </div>
 
@@ -1187,14 +1188,22 @@ $('catWrap').addEventListener('click',async()=>{
 
 // ── Name ────────────────────────────────
 async function saveName(){
-  const v=$('nameInp').value.trim();if(!v)return;
-  userName=v.charAt(0).toUpperCase()+v.slice(1).toLowerCase();
-  fd.joinDate=new Date().toLocaleDateString();
-  await dbP('user',{id:'main',name:userName,joinDate:fd.joinDate});
-  // Sync name to backend so it loads on any device after login
-  if(userId) fetch('/update-name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:userId,name:userName})}).catch(()=>{});
-  $('nameOverlay').style.display='none';
-  await addPts(5);greet(true);
+  const v=$('nameInp').value.trim();
+  if(!v){$('nameErr')&&($('nameErr').textContent='Please enter your name.');return;}
+  const btn=$('nameBtn');if(btn){btn.textContent='...';btn.disabled=true;}
+  try{
+    userName=v.charAt(0).toUpperCase()+v.slice(1).toLowerCase();
+    fd.joinDate=new Date().toLocaleDateString();
+    try{await dbP('user',{id:'main',name:userName,joinDate:fd.joinDate});}catch(e){console.warn('DB save failed, continuing:',e);}
+    if(userId) fetch('/update-name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:userId,name:userName})}).catch(()=>{});
+    $('nameOverlay').style.display='none';
+    try{await addPts(5);}catch(e){}
+    greet(true);
+  }catch(e){
+    console.error('saveName error:',e);
+    if(btn){btn.textContent="Let's talk";btn.disabled=false;}
+    if($('nameErr'))$('nameErr').textContent='Something went wrong. Try again.';
+  }
 }
 $('nameInp').addEventListener('keydown',e=>{if(e.key==='Enter')saveName();});
 
@@ -1429,4 +1438,27 @@ function selPlan(el){
 
 function initRazorpay(){
   if(typeof Razorpay==='undefined'){
-    toast('Add your Razorpay key to activate pay
+    toast('Add your Razorpay key to activate payments.');
+    closePremium();return;
+  }
+  const amounts={'5':500,'199':19900,'499':49900};
+  const options={
+    key:'rzp_test_YOUR_KEY_HERE', // 🔑 Replace with your Razorpay key
+    amount:amounts[selectedPlan]||500,
+    currency:'INR',
+    name:'Kitty AI Companion',
+    description:`₹${selectedPlan}/month Premium`,
+    image:'/icon-192.png',
+    handler:r=>{
+      toast('You\'re in. Welcome to Premium.');
+      localStorage.setItem('kittyPlan',selectedPlan);
+      closePremium();renderProfile();
+    },
+    prefill:{name:userName||'Friend'},
+    theme:{color:'#a855f7'}
+  };
+  new Razorpay(options).open();
+}
+</script>
+</body>
+</html>
