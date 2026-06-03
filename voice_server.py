@@ -33,13 +33,26 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USE_PG = bool(DATABASE_URL)
 
 if USE_PG:
-    import psycopg
-    def get_conn():
+    try:
+        import psycopg
+        def get_conn():
+            try:
+                return psycopg.connect(DATABASE_URL)
+            except Exception:
+                return psycopg.connect(DATABASE_URL + "?sslmode=require")
+        print("   Memory DB: PostgreSQL ✓")
+    except ImportError:
         try:
-            return psycopg.connect(DATABASE_URL)
-        except Exception:
-            return psycopg.connect(DATABASE_URL + "?sslmode=require")
-    print("   Memory DB: PostgreSQL ✓")
+            import psycopg2
+            def get_conn():
+                try:
+                    return psycopg2.connect(DATABASE_URL)
+                except Exception:
+                    return psycopg2.connect(DATABASE_URL, sslmode="require")
+            print("   Memory DB: PostgreSQL (psycopg2) ✓")
+        except ImportError:
+            USE_PG = False
+            print("   ⚠ No psycopg driver found, falling back to SQLite")
 else:
     DB_PATH = os.environ.get("DB_PATH", "/tmp/kitty_memory.db")
     def get_conn():
@@ -780,16 +793,4 @@ def warmup_cache():
                 if resp.status_code == 200:
                     with open(cache_path, "wb") as f:
                         f.write(resp.content)
-                    print(f"  ✓ Cached: '{text}'")
-            except Exception as e:
-                print(f"  ✗ Warmup failed: {e}")
-
-if __name__ == "__main__":
-    import socket, threading
-    ip = socket.gethostbyname(socket.gethostname())
-    print("\n=== Kitty Voice Server ===")
-    print(f"   PC:      http://localhost:5000")
-    print(f"   Android: http://{ip}:5000")
-    print("=========================\n")
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+       
