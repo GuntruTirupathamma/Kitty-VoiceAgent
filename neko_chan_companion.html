@@ -681,7 +681,7 @@ const pick=a=>a[Math.floor(Math.random()*a.length)];
 let userName='',convHistory=[],currentMood='neutral';
 let isListening=false,isTalking=false,currentAudio=null;
 let currentTopic=null;           // tracks what they're actually talking about
-const DAILY_LIMIT=10000;         // effectively unlimited
+const DAILY_LIMIT=10;            // free tier: 10 messages per day
 let fd={id:'main',points:0,rank:0,streak:0,lastDate:'',chatCount:0,joinDate:new Date().toLocaleDateString(),dailyMsgs:0,dailyDate:''};
 let blinkT,tailT,breathT,mouthT;
 let notifEnabled=false;
@@ -1451,4 +1451,4 @@ function showPremium(){$('premiumOverlay').classList.add('show');}
 function closePremium(){$('premiumOverlay').classList.remove('show');}
 
 function selPlan(el){
-  document.querySelectorAll('.plan-card').forEach(c=>c.classList.r
+  document.querySelectorAll('.plan-card').forEach(c=>c.cl
