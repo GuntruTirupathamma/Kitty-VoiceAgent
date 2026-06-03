@@ -36,7 +36,11 @@ if USE_PG:
     import psycopg2
     from psycopg2.extras import RealDictCursor
     def get_conn():
-        return psycopg2.connect(DATABASE_URL, sslmode="require")
+        # Railway private network doesn't need sslmode; public URL does
+        try:
+            return psycopg2.connect(DATABASE_URL)
+        except Exception:
+            return psycopg2.connect(DATABASE_URL, sslmode="require")
     print("   Memory DB: PostgreSQL ✓")
 else:
     DB_PATH = os.environ.get("DB_PATH", "/tmp/kitty_memory.db")
@@ -90,7 +94,10 @@ def init_db():
     finally:
         conn.close()
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print(f"   ⚠ DB init warning: {e} — app will still start")
 
 KITTY_SYSTEM = """You are Kitty. Indian girl. The user's closest friend.
 
@@ -782,12 +789,9 @@ def warmup_cache():
 if __name__ == "__main__":
     import socket, threading
     ip = socket.gethostbyname(socket.gethostname())
-    # Pre-warm cache in background
-    threading.Thread(target=warmup_cache, daemon=True).start()
-    print(f"\n╔══════════════════════════════════════════╗")
-    print(f"║  PC:     http://localhost:5000           ║")
-    print(f"║  Android: http://{ip}:5000         ║")
-    print(f"║  Open Chrome → Add to Home Screen        ║")
-    print(f"╚══════════════════════════════════════════╝\n")
+    print("\n=== Kitty Voice Server ===")
+    print(f"   PC:      http://localhost:5000")
+    print(f"   Android: http://{ip}:5000")
+    print("=========================\n")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
