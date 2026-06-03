@@ -998,7 +998,9 @@ async function speak(text,emotion='neutral',cb){
       a.oncanplay=()=>{if(!isTalking){isTalking=true;startTalkAnim();}};
       a.onended=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
       a.onerror=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
-      a.play().catch(()=>{cb&&cb();});return;
+      const doPlay=()=>a.play().catch(()=>{cb&&cb();});
+      if(_actx&&_actx.state==='suspended'){_actx.resume().then(doPlay);}else{doPlay();}
+      return;
     }
   }catch(e){console.warn('speak:',e);}
   cb&&cb();
@@ -1084,8 +1086,24 @@ if(SR){
   recognition.onend=()=>{const said=finalText.trim();if(said)processInput(said);else resetMic();};
 }
 
+// Unlock audio context on mic tap so a.play() works after async AI call
+let _actx=null;
+function _unlockAudio(){
+  if(_actx)return;
+  try{
+    _actx=new(window.AudioContext||window.webkitAudioContext)();
+    const b=_actx.createBuffer(1,1,22050);
+    const s=_actx.createBufferSource();
+    s.buffer=b;s.connect(_actx.destination);s.start(0);
+    _actx.resume();
+  }catch(e){}
+}
+document.addEventListener('touchstart',_unlockAudio,{passive:true});
+document.addEventListener('mousedown',_unlockAudio,{passive:true});
+
 $('micBtn').addEventListener('click',e=>{
   e.preventDefault();
+  _unlockAudio();
   if(isListening){stopL();return;}
   stopKitty();setTimeout(startL,180);
 });
@@ -1411,27 +1429,4 @@ function selPlan(el){
 
 function initRazorpay(){
   if(typeof Razorpay==='undefined'){
-    toast('Add your Razorpay key to activate payments.');
-    closePremium();return;
-  }
-  const amounts={'5':500,'199':19900,'499':49900};
-  const options={
-    key:'rzp_test_YOUR_KEY_HERE', // 🔑 Replace with your Razorpay key
-    amount:amounts[selectedPlan]||500,
-    currency:'INR',
-    name:'Kitty AI Companion',
-    description:`₹${selectedPlan}/month Premium`,
-    image:'/icon-192.png',
-    handler:r=>{
-      toast('You\'re in. Welcome to Premium.');
-      localStorage.setItem('kittyPlan',selectedPlan);
-      closePremium();renderProfile();
-    },
-    prefill:{name:userName||'Friend'},
-    theme:{color:'#a855f7'}
-  };
-  new Razorpay(options).open();
-}
-</script>
-</body>
-</html>
+    toast('Add your Razorpay key to activate pay
