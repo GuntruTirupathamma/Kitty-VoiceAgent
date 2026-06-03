@@ -628,7 +628,7 @@ body{background:#0d0820;display:flex;align-items:center;justify-content:center;}
 </div>
 
 <!-- NAME OVERLAY -->
-<div class="overlay" id="nameOverlay">
+<div class="overlay" id="nameOverlay" style="display:none;">
   <div class="nc">
     <div class="nc-icon">🐱</div>
     <div class="nc-h">Hey. I'm Kitty.</div>
@@ -1411,4 +1411,4 @@ async function tellStory(){
   btn.textContent='🌙 Writing your story…';btn.disabled=true;
   card.classList.remove('visible');stopKitty();
   try{
-    const res=await fetch('/sleep-story',{method:'POST',headers:{'Content-Ty
+    const res=await fetch('/sleep-story',{method:'POST
