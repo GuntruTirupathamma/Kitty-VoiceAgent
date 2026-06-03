@@ -708,7 +708,7 @@ function unlockAudio(){
 document.addEventListener('touchstart',unlockAudio,{once:false,passive:true});
 document.addEventListener('mousedown',unlockAudio,{once:false,passive:true});
 let currentTopic=null;           // tracks what they're actually talking about
-const DAILY_LIMIT=10;            // free tier: 10 messages per day
+const DAILY_LIMIT=999;           // effectively unlimited
 let fd={id:'main',points:0,rank:0,streak:0,lastDate:'',chatCount:0,joinDate:new Date().toLocaleDateString(),dailyMsgs:0,dailyDate:''};
 let blinkT,tailT,breathT,mouthT;
 let notifEnabled=false;
@@ -1269,6 +1269,8 @@ function greet(first=false){
 
 // ── Init ────────────────────────────────
 async function init(){
+  // Always close premium overlay on load — never block the UI
+  $('premiumOverlay').classList.remove('show');
   try{await openDB();}catch(e){console.warn('DB open failed:',e);}
 
   // No login gate — auto userId already set above
@@ -1409,5 +1411,4 @@ async function getJournalSummary(){
   const card=$('journalSummaryCard'),text=$('summaryText');
   text.textContent='Kitty is reflecting on your week…';card.style.display='block';
   try{
-    const res=await fetch('/journal/summary',{method:'POST',headers:{'Content-Type':'application/json'},
-    
+    c
