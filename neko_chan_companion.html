@@ -992,14 +992,16 @@ async function speak(text,emotion='neutral',cb){
   try{
     const res=await fetch('/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,emotion,lang:selectedLang}),signal:AbortSignal.timeout(18000)});
     if(res.ok){
+      const ct=res.headers.get('content-type')||'';
+      if(!ct.includes('audio')){console.warn('speak: got non-audio response',ct);cb&&cb();return;}
       const blob=await res.blob();
       const url=URL.createObjectURL(blob);
       const a=new Audio(url);currentAudio=a;a.volume=1.0;
       a.oncanplay=()=>{if(!isTalking){isTalking=true;startTalkAnim();}};
       a.onended=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
-      a.onerror=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
-      a.play().catch(()=>{cb&&cb();});return;
-    }
+      a.onerror=(err)=>{console.warn('audio play error',err);isTalking=false;stopTalkAnim();cb&&cb();};
+      a.play().catch((e)=>{console.warn('play() blocked:',e);cb&&cb();});return;
+    }else{console.warn('speak: server error',res.status);}
   }catch(e){console.warn('speak:',e);}
   cb&&cb();
 }
@@ -1420,12 +1422,4 @@ function selPlan(el){
 
 function initRazorpay(){
   if(typeof Razorpay==='undefined'){
-    toast('Add your Razorpay key to activate payments.');
-    closePremium();return;
-  }
-  const amounts={'5':500,'199':19900,'499':49900};
-  const options={
-    key:'rzp_test_YOUR_KEY_HERE', // 🔑 Replace with your Razorpay key
-    amount:amounts[selectedPlan]||500,
-    currency:'INR',
-    name:'K
+    toast('Add your Ra

@@ -8,7 +8,7 @@ Open Chrome: http://localhost:5000
 Android: open http://YOUR_PC_IP:5000 in Chrome → Add to Home Screen
 """
 
-import asyncio, os, hashlib, requests, json, re, sqlite3, threading
+import asyncio, os, hashlib, requests, json, re, sqlite3, threading, subprocess
 from flask import Flask, request, send_file, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from io import BytesIO
@@ -557,7 +557,7 @@ def speak():
                 "optimize_streaming_latency": 1  # 1 = quality first, still streams fast
             },
             stream=True,  # stream response
-            timeout=10
+            timeout=20
         )
         if resp.status_code == 200:
             # Stream directly to browser AND save to cache simultaneously
@@ -587,15 +587,19 @@ def speak():
     except Exception as e:
         print(f"  ✗ EL stream: {e}")
 
-    # Edge TTS fallback
+    # Edge TTS fallback — use subprocess to avoid asyncio event loop conflict with gunicorn
     if EDGE_OK:
         edge_path = os.path.join(CACHE_DIR, f"edge_{cache_key}.mp3")
         try:
-            async def gen():
-                c = edge_tts.Communicate(text=text, voice="en-IN-NeerjaNeural")
-                await c.save(edge_path)
-            asyncio.run(gen())
-            return send_file(edge_path, mimetype="audio/mpeg")
+            result = subprocess.run(
+                ["edge-tts", "--voice", "en-IN-NeerjaNeural", "--text", text, "--write-media", edge_path],
+                timeout=15, capture_output=True
+            )
+            if result.returncode == 0 and os.path.exists(edge_path):
+                print(f"  ✓ Edge TTS fallback OK")
+                return send_file(edge_path, mimetype="audio/mpeg")
+            else:
+                print(f"  ✗ Edge CLI: {result.stderr.decode()[:100]}")
         except Exception as e:
             print(f"  ✗ Edge: {e}")
 
@@ -724,8 +728,4 @@ if __name__ == "__main__":
     threading.Thread(target=warmup_cache, daemon=True).start()
     print(f"\n╔══════════════════════════════════════════╗")
     print(f"║  PC:     http://localhost:5000           ║")
-    print(f"║  Android: http://{ip}:5000         ║")
-    print(f"║  Open Chrome → Add to Home Screen        ║")
-    print(f"╚══════════════════════════════════════════╝\n")
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    print(f"║  Android: http://{ip}:5000 
