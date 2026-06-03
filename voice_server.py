@@ -33,14 +33,12 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USE_PG = bool(DATABASE_URL)
 
 if USE_PG:
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
+    import psycopg
     def get_conn():
-        # Railway private network doesn't need sslmode; public URL does
         try:
-            return psycopg2.connect(DATABASE_URL)
+            return psycopg.connect(DATABASE_URL)
         except Exception:
-            return psycopg2.connect(DATABASE_URL, sslmode="require")
+            return psycopg.connect(DATABASE_URL + "?sslmode=require")
     print("   Memory DB: PostgreSQL ✓")
 else:
     DB_PATH = os.environ.get("DB_PATH", "/tmp/kitty_memory.db")
@@ -795,3 +793,4 @@ if __name__ == "__main__":
     print("=========================\n")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+                                                                                                                        
