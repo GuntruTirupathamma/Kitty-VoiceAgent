@@ -1004,28 +1004,45 @@ function stopKitty(){
   isTalking=false;stopTalkAnim();
 }
 
+// ── Native TTS fallback (browser built-in, always works) ──────────
+function speakNative(text, cb){
+  if(!window.speechSynthesis){cb&&cb();return;}
+  const utter=new SpeechSynthesisUtterance(text);
+  utter.lang='en-IN';utter.rate=0.92;utter.pitch=1.15;utter.volume=1.0;
+  // Pick an Indian/female voice if available
+  const voices=window.speechSynthesis.getVoices();
+  const preferred=voices.find(v=>v.lang==='en-IN')||voices.find(v=>v.lang.startsWith('en')&&v.name.toLowerCase().includes('female'))||voices.find(v=>v.lang.startsWith('en'))||null;
+  if(preferred)utter.voice=preferred;
+  utter.onstart=()=>{isTalking=true;startTalkAnim();};
+  utter.onend=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
+  utter.onerror=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utter);
+}
+
 async function speak(text,emotion='neutral',cb){
   stopKitty();
   const clean=cleanTTS(text);
   if(!clean){cb&&cb();return;}
   try{
-    const res=await fetch('/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,emotion,lang:selectedLang}),signal:AbortSignal.timeout(18000)});
+    const res=await fetch('/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,emotion,lang:selectedLang}),signal:AbortSignal.timeout(15000)});
     if(res.ok){
       const ct=res.headers.get('content-type')||'';
-      if(!ct.includes('audio')){console.warn('speak: got non-audio response',ct);cb&&cb();return;}
+      if(!ct.includes('audio')){console.warn('speak: non-audio, using native TTS');speakNative(clean,cb);return;}
       const blob=await res.blob();
+      if(!blob||blob.size<500){console.warn('speak: empty blob, using native TTS');speakNative(clean,cb);return;}
       const url=URL.createObjectURL(blob);
       const a=new Audio(url);currentAudio=a;a.volume=1.0;
       a.oncanplay=()=>{if(!isTalking){isTalking=true;startTalkAnim();}};
       a.onended=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
-      a.onerror=(err)=>{console.warn('audio play error',err);isTalking=false;stopTalkAnim();cb&&cb();};
-      // Resume AudioContext first (required after Chrome suspends it), then play
-      const doPlay=()=>a.play().catch((e)=>{console.warn('play() blocked:',e);cb&&cb();});
+      a.onerror=()=>{console.warn('audio error, using native TTS');URL.revokeObjectURL(url);speakNative(clean,cb);};
+      const doPlay=()=>a.play().catch(()=>{console.warn('play() blocked, using native TTS');speakNative(clean,cb);});
       if(_audioCtx&&_audioCtx.state==='suspended'){_audioCtx.resume().then(doPlay);}else{doPlay();}
       return;
-    }else{console.warn('speak: server error',res.status);}
-  }catch(e){console.warn('speak:',e);}
-  cb&&cb();
+    }else{console.warn('speak: server error',res.status,', using native TTS');}
+  }catch(e){console.warn('speak fetch failed:',e.message,', using native TTS');}
+  // Final fallback — browser native TTS, no server needed
+  speakNative(clean,cb);
 }
 
 // ── AI ──────────────────────────────────
@@ -1393,28 +1410,4 @@ async function tellStory(){
       return;
     }
   }catch(e){console.warn('sleep story:',e);}
-  const fb='Close your eyes. Imagine a soft cloud. Just you, drifting slow through a warm night sky. Your body gets heavy. Your thoughts get quiet. Goodnight.';
-  card.textContent=fb;card.classList.add('visible');
-  speak(fb,'sleepy',()=>{btn.textContent='Tell me another one';btn.disabled=false;});
-}
-
-// ── CAT CUSTOMIZATION ────────────────────
-const ACCESSORIES=[
-  {id:'none',emoji:'',name:'None',pts:0},
-  {id:'bow',emoji:'🎀',name:'Bow',pts:5},
-  {id:'flowers',emoji:'🌸',name:'Flowers',pts:15},
-  {id:'star',emoji:'⭐',name:'Star',pts:30},
-  {id:'crown',emoji:'👑',name:'Crown',pts:60},
-  {id:'diamond',emoji:'💎',name:'Diamond',pts:100},
-  {id:'butterfly',emoji:'🦋',name:'Butterfly',pts:150},
-  {id:'rainbow',emoji:'🌈',name:'Rainbow',pts:250},
-];
-let equippedAcc='none';
-
-function renderAccessories(){
-  const grid=$('accGrid');if(!grid)return;
-  grid.innerHTML='';
-  ACCESSORIES.forEach(acc=>{
-    const unlocked=fd.points>=acc.pts,equipped=equippedAcc===acc.id;
-    const div=document.createElement('div');
-    div.className='acc-it
+  const 
