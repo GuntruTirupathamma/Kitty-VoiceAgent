@@ -465,12 +465,12 @@ def speak():
         except Exception as e:
             print(f"  Edge: {e}")
 
+
     # gTTS fallback — Google free TTS, no API key needed
     try:
         from gtts import gTTS
         gtts_path = os.path.join(CACHE_DIR, f"gtts_{cache_key}.mp3")
-        tts = gTTS(text=text, lang='en', slow=False)
-        tts.save(gtts_path)
+        gTTS(text=text, lang='en', slow=False).save(gtts_path)
         print(f"  gTTS fallback OK")
         return send_file(gtts_path, mimetype="audio/mpeg")
     except Exception as e:
@@ -533,4 +533,14 @@ Be warm, personal, encouraging. Speak directly to {name}. {lang_instr}\n\nEntrie
             return jsonify({"summary": resp.json()["choices"][0]["message"]["content"].strip()})
     except Exception as e:
         print(f"  Journal summary error: {e}")
-    return jsonify({"summary": f"{name}, you've been journalin
+    return jsonify({"summary": f"{name}, you've been journaling. That says something. Keep going."})
+
+if __name__ == "__main__":
+    import socket
+    ip = socket.gethostbyname(socket.gethostname())
+    print(f"\n=== Kitty Voice Server ===")
+    print(f"   PC:      http://localhost:5000")
+    print(f"   Android: http://{ip}:5000")
+    print("=========================\n")
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
