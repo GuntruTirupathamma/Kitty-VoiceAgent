@@ -16,7 +16,7 @@ from io import BytesIO
 app = Flask(__name__)
 CORS(app)
 
-CACHE_DIR = "voice_cache"
+CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/voice_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── Config ────────────────────────────────────────
@@ -31,7 +31,7 @@ GROQ_KEY    = os.environ.get("GROQ_KEY",    "YOUR_GROQ_API_KEY")
 # ── Persistent Memory Database (SQLite) ───────────
 # Local dev: kitty_memory.db in project folder
 # Railway:   set DB_PATH env var to a persistent volume path, or use PostgreSQL
-DB_PATH = os.environ.get("DB_PATH", "kitty_memory.db")
+DB_PATH = os.environ.get("DB_PATH", "/tmp/kitty_memory.db")
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -728,4 +728,4 @@ if __name__ == "__main__":
     threading.Thread(target=warmup_cache, daemon=True).start()
     print(f"\n╔══════════════════════════════════════════╗")
     print(f"║  PC:     http://localhost:5000           ║")
-    print(f"║  Android: http://{ip}:5000 
+    
