@@ -269,6 +269,23 @@ def icon(size):
 @app.route("/health")
 def health():
     return jsonify({"status": "running", "voice_id": EL_VOICE_ID, "groq": bool(GROQ_KEY)})
+@app.route("/test-voice")
+def test_voice():
+    """Test ElevenLabs connection — visit /test-voice in browser"""
+    if not EL_KEY:
+        return jsonify({"error": "EL_KEY not set"})
+    try:
+        resp = requests.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{EL_VOICE_ID}/stream",
+            headers={"xi-api-key": EL_KEY, "Content-Type": "application/json"},
+            json={"text": "Hi", "model_id": "eleven_multilingual_v2",
+                  "voice_settings": {"stability": 0.4, "similarity_boost": 0.9}},
+            stream=True, timeout=10
+        )
+        return jsonify({"status": resp.status_code, "ok": resp.status_code == 200,
+                        "detail": resp.text[:300] if resp.status_code != 200 else "Voice works!"})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 # ── AI endpoint (Groq) ────────────────────────────
 @app.route("/ai", methods=["POST"])
