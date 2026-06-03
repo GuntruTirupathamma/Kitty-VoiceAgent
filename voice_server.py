@@ -20,43 +20,77 @@ CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/voice_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── Config ────────────────────────────────────────
-# Production: set these as env vars on Railway (never commit real keys)
-# Local dev: paste keys below as fallback
 EL_KEY      = os.environ.get("EL_KEY",      "YOUR_ELEVENLABS_API_KEY")
 EL_VOICE_ID = os.environ.get("EL_VOICE_ID", "YOUR_ELEVENLABS_VOICE_ID")
-EL_MODEL    = "eleven_multilingual_v2"   # smoother, more natural than turbo
+EL_MODEL    = "eleven_multilingual_v2"
 
 GROQ_KEY    = os.environ.get("GROQ_KEY",    "YOUR_GROQ_API_KEY")
 
-# ── Persistent Memory Database (SQLite) ───────────
-# Local dev: kitty_memory.db in project folder
-# Railway:   set DB_PATH env var to a persistent volume path, or use PostgreSQL
-DB_PATH = os.environ.get("DB_PATH", "/tmp/kitty_memory.db")
+# ── Database layer: PostgreSQL (Railway) or SQLite (local) ────────────
+# Railway auto-injects DATABASE_URL when you add a PostgreSQL plugin.
+# Locally it falls back to SQLite — no config needed.
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+USE_PG = bool(DATABASE_URL)
+
+if USE_PG:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    def get_conn():
+        return psycopg2.connect(DATABASE_URL, sslmode="require")
+    print("   Memory DB: PostgreSQL ✓")
+else:
+    DB_PATH = os.environ.get("DB_PATH", "/tmp/kitty_memory.db")
+    def get_conn():
+        return sqlite3.connect(DB_PATH)
+    print(f"   Memory DB: SQLite ({DB_PATH}) ✓")
 
 def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id    TEXT PRIMARY KEY,
-                identifier TEXT UNIQUE NOT NULL,
-                name       TEXT,
-                created_at INTEGER DEFAULT (strftime('%s','now'))
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memories (
-                user_id  TEXT NOT NULL,
-                category TEXT NOT NULL,
-                key      TEXT NOT NULL,
-                value    TEXT NOT NULL,
-                updated_at INTEGER DEFAULT (strftime('%s','now')),
-                PRIMARY KEY (user_id, category, key)
-            )
-        """)
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        if USE_PG:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id    TEXT PRIMARY KEY,
+                    identifier TEXT UNIQUE NOT NULL,
+                    name       TEXT,
+                    created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS memories (
+                    user_id    TEXT NOT NULL,
+                    category   TEXT NOT NULL,
+                    key        TEXT NOT NULL,
+                    value      TEXT NOT NULL,
+                    updated_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
+                    PRIMARY KEY (user_id, category, key)
+                )
+            """)
+        else:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id    TEXT PRIMARY KEY,
+                    identifier TEXT UNIQUE NOT NULL,
+                    name       TEXT,
+                    created_at INTEGER DEFAULT (strftime('%s','now'))
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS memories (
+                    user_id    TEXT NOT NULL,
+                    category   TEXT NOT NULL,
+                    key        TEXT NOT NULL,
+                    value      TEXT NOT NULL,
+                    updated_at INTEGER DEFAULT (strftime('%s','now')),
+                    PRIMARY KEY (user_id, category, key)
+                )
+            """)
         conn.commit()
+    finally:
+        conn.close()
 
 init_db()
-print("   Memory DB: ✓")
 
 KITTY_SYSTEM = """You are Kitty. Indian girl. The user's closest friend.
 
@@ -149,19 +183,22 @@ def login():
         return jsonify({"error": "Email or phone required"}), 400
 
     import uuid
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute(
-            "SELECT user_id, name FROM users WHERE identifier = ?", (identifier,)
-        ).fetchone()
+    ph = "%s" if USE_PG else "?"
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT user_id, name FROM users WHERE identifier = {ph}", (identifier,))
+        row = cur.fetchone()
         if row:
             print(f"  Login: returning user {identifier[:6]}***")
             return jsonify({"user_id": row[0], "name": row[1], "returning": True})
-        # New user
         user_id = "u_" + uuid.uuid4().hex[:20]
-        conn.execute("INSERT INTO users (user_id, identifier) VALUES (?, ?)", (user_id, identifier))
+        cur.execute(f"INSERT INTO users (user_id, identifier) VALUES ({ph}, {ph})", (user_id, identifier))
         conn.commit()
         print(f"  Login: new user {identifier[:6]}***")
         return jsonify({"user_id": user_id, "name": None, "returning": False})
+    finally:
+        conn.close()
 
 
 @app.route("/update-name", methods=["POST"])
@@ -172,9 +209,14 @@ def update_name_route():
     if not user_id or not name:
         return jsonify({"ok": False}), 400
     try:
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("UPDATE users SET name = ? WHERE user_id = ?", (name, user_id))
+        ph = "%s" if USE_PG else "?"
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"UPDATE users SET name = {ph} WHERE user_id = {ph}", (name, user_id))
             conn.commit()
+        finally:
+            conn.close()
     except Exception as e:
         print(f"  Update name error: {e}")
     return jsonify({"ok": True})
@@ -229,17 +271,27 @@ JSON array:"""
         facts = json.loads(match.group())
         if not isinstance(facts, list) or not facts:
             return
-        with sqlite3.connect(DB_PATH) as conn:
+        ph = "%s" if USE_PG else "?"
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
             for f in facts:
                 if f.get("key") and f.get("value"):
-                    conn.execute("""
-                        INSERT OR REPLACE INTO memories (user_id, category, key, value, updated_at)
-                        VALUES (?, ?, ?, ?, strftime('%s','now'))
-                    """, (user_id,
-                          str(f.get("category","fact"))[:30],
-                          str(f["key"])[:50],
-                          str(f["value"])[:200]))
+                    if USE_PG:
+                        cur.execute("""
+                            INSERT INTO memories (user_id, category, key, value, updated_at)
+                            VALUES (%s, %s, %s, %s, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                            ON CONFLICT (user_id, category, key) DO UPDATE
+                            SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at
+                        """, (user_id, str(f.get("category","fact"))[:30], str(f["key"])[:50], str(f["value"])[:200]))
+                    else:
+                        cur.execute("""
+                            INSERT OR REPLACE INTO memories (user_id, category, key, value, updated_at)
+                            VALUES (?, ?, ?, ?, strftime('%s','now'))
+                        """, (user_id, str(f.get("category","fact"))[:30], str(f["key"])[:50], str(f["value"])[:200]))
             conn.commit()
+        finally:
+            conn.close()
         print(f"  ✓ Memories saved for {user_id[:12]}: {[f['key'] for f in facts if f.get('key')]}")
     except Exception as e:
         print(f"  Memory extraction skipped: {e}")
@@ -319,12 +371,18 @@ Current mood: {mood_hint}"""
     # ── Load memories from DB ─────────────────────
     db_memories = []
     try:
-        with sqlite3.connect(DB_PATH) as conn:
-            rows = conn.execute(
-                "SELECT key, value FROM memories WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10",
+        ph = "%s" if USE_PG else "?"
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"SELECT key, value FROM memories WHERE user_id = {ph} ORDER BY updated_at DESC LIMIT 10",
                 (user_id,)
-            ).fetchall()
+            )
+            rows = cur.fetchall()
             db_memories = [f"{r[0]}: {r[1]}" for r in rows]
+        finally:
+            conn.close()
     except Exception:
         pass
 
@@ -685,47 +743,4 @@ Entries:
             timeout=8
         )
         if resp.status_code == 200:
-            summary = resp.json()["choices"][0]["message"]["content"].strip()
-            return jsonify({"summary": summary})
-    except Exception as e:
-        print(f"  Journal summary error: {e}")
-
-    return jsonify({"summary": f"{name}, you've been journaling. That says something. Keep going."})
-
-
-def warmup_cache():
-    """Pre-generate common phrases so they play instantly"""
-    phrases = [
-        ("I'm listening...", "curious"),
-        ("Tell me more.", "loving"),
-        ("I'm right here.", "console"),
-        ("Hmm, let me think.", "curious"),
-    ]
-    print("  Warming up voice cache...")
-    for text, emotion in phrases:
-        cache_key = hashlib.md5(f"{text}|{emotion}|{EL_VOICE_ID}".encode()).hexdigest()
-        cache_path = os.path.join(CACHE_DIR, f"{cache_key}.mp3")
-        if not os.path.exists(cache_path):
-            try:
-                vs = EMOTION_SETTINGS.get(emotion, EMOTION_SETTINGS["neutral"])
-                resp = requests.post(
-                    f"https://api.elevenlabs.io/v1/text-to-speech/{EL_VOICE_ID}/stream",
-                    headers={"xi-api-key": EL_KEY, "Content-Type": "application/json"},
-                    json={"text": text, "model_id": EL_MODEL, "voice_settings": vs, "optimize_streaming_latency": 4},
-                    timeout=8
-                )
-                if resp.status_code == 200:
-                    with open(cache_path, "wb") as f:
-                        f.write(resp.content)
-                    print(f"  ✓ Cached: '{text}'")
-            except Exception as e:
-                print(f"  ✗ Warmup failed: {e}")
-
-if __name__ == "__main__":
-    import socket, threading
-    ip = socket.gethostbyname(socket.gethostname())
-    # Pre-warm cache in background
-    threading.Thread(target=warmup_cache, daemon=True).start()
-    print(f"\n╔══════════════════════════════════════════╗")
-    print(f"║  PC:     http://localhost:5000           ║")
-    
+            summa
