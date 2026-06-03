@@ -1284,10 +1284,12 @@ async function init(){
   if(!userName){
     $('nameOverlay').style.display='flex';
     showBubble('What should I call you?');
+    // Kitty speaks the greeting question
+    setTimeout(()=>speak("Hey. I'm Kitty. What should I call you?",'curious'),500);
   } else {
     $('nameOverlay').style.display='none';
     try{await addPts(2);}catch(e){}
-    setTimeout(()=>greet(false),700);
+    setTimeout(()=>greet(false),600);
   }
 }
 init().catch(console.error);
@@ -1418,7 +1420,4 @@ function selTheme(el){
 
 async function tellStory(){
   const btn=$('storyBtn'),card=$('storyCard');
-  btn.textContent='🌙 Writing your story…';btn.disabled=true;
-  card.classList.remove('visible');stopKitty();
-  try{
-    const 
+  btn
