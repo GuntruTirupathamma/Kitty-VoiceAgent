@@ -358,15 +358,6 @@ body{background:#0d0820;display:flex;align-items:center;justify-content:center;}
       </div>
       <div class="bwrap"><div class="bubble" id="bubble">...</div></div>
       <div class="trx" id="trx"></div>
-      <!-- Text input fallback -->
-      <div style="padding:0 16px 6px;display:flex;gap:8px;">
-        <input id="textInp" type="text" placeholder="Type a message..." autocomplete="off"
-          style="flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:24px;padding:10px 16px;color:#fff;font-family:'Nunito',sans-serif;font-size:14px;font-weight:600;outline:none;"
-          onkeydown="if(event.key==='Enter'){sendText();}" />
-        <button onclick="sendText()" style="background:linear-gradient(135deg,#a855f7,#ec4899);border:none;border-radius:50%;width:42px;height:42px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
-        </button>
-      </div>
       <div class="mic-sec">
         <div class="mic-outer">
           <div class="pulse-ring"></div>
@@ -1224,7 +1215,6 @@ async function processInput(text){
 
 const nm=()=>userName||'friend';
 function showBubble(text,thinking=false){const b=$('bubble');b.textContent=text;b.className='bubble'+(thinking?' thinking':'');}
-function sendText(){unlockAudio();const v=($('textInp').value||'').trim();if(!v)return;$('textInp').value='';processInput(v);}
 
 $('catWrap').addEventListener('click',async()=>{
   unlockAudio();
@@ -1411,4 +1401,24 @@ async function getJournalSummary(){
   const card=$('journalSummaryCard'),text=$('summaryText');
   text.textContent='Kitty is reflecting on your week…';card.style.display='block';
   try{
-    c
+    const res=await fetch('/journal/summary',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({entries:entries.slice(-7),name:userName||'friend',lang:selectedLang}),signal:AbortSignal.timeout(10000)});
+    if(res.ok){const d=await res.json();text.textContent=d.summary;speak(d.summary,'loving');return;}
+  }catch(e){console.warn('summary:',e);}
+  text.textContent=`${userName||'friend'}, you've been journaling. That says something. Keep going.`;
+}
+
+// ── SLEEP STORIES ────────────────────────
+let selStoryTheme='forest';
+
+function selTheme(el){
+  document.querySelectorAll('.story-theme').forEach(t=>t.classList.remove('sel'));
+  el.classList.add('sel');selStoryTheme=el.dataset.theme;
+}
+
+async function tellStory(){
+  const btn=$('storyBtn'),card=$('storyCard');
+  btn.textContent='🌙 Writing your story…';btn.disabled=true;
+  card.classList.remove('visible');stopKitty();
+  try{
+    const 
