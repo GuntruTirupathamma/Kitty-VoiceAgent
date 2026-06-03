@@ -1,5 +1,5 @@
 // Kitty Service Worker v2 — PWA offline + FCM ready
-const CACHE = 'kitty-v2';
+const CACHE = 'kitty-v6';
 const STATIC = ['/', '/manifest.json'];
 
 // ── Install: cache shell ─────────────────────────
