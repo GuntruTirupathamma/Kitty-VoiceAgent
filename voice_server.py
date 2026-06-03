@@ -539,43 +539,18 @@ def speak():
         return send_file(cache_path, mimetype="audio/mpeg")
 
     lang = data.get("lang") or "en-IN"
+    tts_model = "eleven_multilingual_v2" if lang != "en-IN" else EL_MODEL
+    vs = EMOTION_SETTINGS.get(emotion, EMOTION_SETTINGS["neutral"])
 
-    # ── Edge TTS PRIMARY (free, no credits needed) ──
-    if EDGE_OK:
-        edge_voices = {
-            "en-IN": "en-IN-NeerjaNeural",
-            "hi-IN": "hi-IN-SwaraNeural",
-            "te-IN": "te-IN-ShrutiNeural",
-            "ta-IN": "ta-IN-PallaviNeural",
-        }
-        edge_voice = edge_voices.get(lang, "en-IN-NeerjaNeural")
-        edge_path = os.path.join(CACHE_DIR, f"edge_{cache_key}.mp3")
-        try:
-            loop = asyncio.new_event_loop()
-            async def gen():
-                c = edge_tts.Communicate(text=text, voice=edge_voice)
-                await c.save(edge_path)
-            loop.run_until_complete(gen())
-            loop.close()
-            if os.path.exists(edge_path):
-                # Also save to main cache path for future hits
-                import shutil
-                shutil.copy2(edge_path, cache_path)
-                print(f"  ✓ Edge TTS [{edge_voice}]: {text[:35]}...")
-                return send_file(edge_path, mimetype="audio/mpeg")
-        except Exception as e:
-            print(f"  ✗ Edge TTS: {e}")
-
-    # ── ElevenLabs FALLBACK (uses credits) ──
+    # ── ElevenLabs PRIMARY ──
     if key:
-        tts_model = "eleven_multilingual_v2" if lang != "en-IN" else EL_MODEL
-        vs = EMOTION_SETTINGS.get(emotion, EMOTION_SETTINGS["neutral"])
-        print(f"  [EL fallback/{emotion}] {text[:45]}...")
+        print(f"  [EL/{emotion}] {text[:45]}...")
         try:
             resp = requests.post(
                 f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
                 headers={"xi-api-key": key, "Content-Type": "application/json"},
-                json={"text": text, "model_id": tts_model, "voice_settings": vs},
+                json={"text": text, "model_id": tts_model, "voice_settings": vs,
+                      "optimize_streaming_latency": 1},
                 stream=True, timeout=10
             )
             if resp.status_code == 200:
@@ -595,6 +570,29 @@ def speak():
             print(f"  ✗ EL {resp.status_code}")
         except Exception as e:
             print(f"  ✗ EL: {e}")
+
+    # ── Edge TTS fallback ──
+    if EDGE_OK:
+        edge_voices = {
+            "en-IN": "en-IN-NeerjaNeural",
+            "hi-IN": "hi-IN-SwaraNeural",
+            "te-IN": "te-IN-ShrutiNeural",
+            "ta-IN": "ta-IN-PallaviNeural",
+        }
+        edge_voice = edge_voices.get(lang, "en-IN-NeerjaNeural")
+        edge_path = os.path.join(CACHE_DIR, f"edge_{cache_key}.mp3")
+        try:
+            loop = asyncio.new_event_loop()
+            async def gen():
+                c = edge_tts.Communicate(text=text, voice=edge_voice)
+                await c.save(edge_path)
+            loop.run_until_complete(gen())
+            loop.close()
+            if os.path.exists(edge_path):
+                print(f"  ✓ Edge TTS [{edge_voice}]: {text[:35]}...")
+                return send_file(edge_path, mimetype="audio/mpeg")
+        except Exception as e:
+            print(f"  ✗ Edge TTS: {e}")
 
     return jsonify({"error": "TTS failed"}), 500
 
