@@ -22,11 +22,11 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 # ── Config ────────────────────────────────────────
 # Production: set these as env vars on Railway (never commit real keys)
 # Local dev: paste keys below as fallback
-EL_KEY      = os.environ.get("EL_KEY",      "YOUR_ELEVENLABS_API_KEY")
-EL_VOICE_ID = os.environ.get("EL_VOICE_ID", "YOUR_ELEVENLABS_VOICE_ID")
+EL_KEY      = os.environ.get("EL_KEY", "")
+EL_VOICE_ID = os.environ.get("EL_VOICE_ID", "cq026hCJMRqmxYMsUslq")
 EL_MODEL    = "eleven_multilingual_v2"   # smoother, more natural than turbo
 
-GROQ_KEY    = os.environ.get("GROQ_KEY",    "YOUR_GROQ_API_KEY")
+GROQ_KEY    = os.environ.get("GROQ_KEY", "")
 
 # ── Persistent Memory Database (SQLite) ───────────
 # Local dev: kitty_memory.db in project folder
@@ -598,16 +598,6 @@ def speak():
             return send_file(edge_path, mimetype="audio/mpeg")
         except Exception as e:
             print(f"  ✗ Edge: {e}")
-
-    # gTTS fallback — Google free TTS, works everywhere, no API key
-    try:
-        from gtts import gTTS
-        gtts_path = os.path.join(CACHE_DIR, f"gtts_{cache_key}.mp3")
-        gTTS(text=text, lang='en', slow=False).save(gtts_path)
-        print(f"  ✓ gTTS fallback")
-        return send_file(gtts_path, mimetype="audio/mpeg")
-    except Exception as e:
-        print(f"  ✗ gTTS: {e}")
 
     return jsonify({"error": "TTS failed"}), 500
 
