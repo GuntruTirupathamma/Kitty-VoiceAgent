@@ -990,7 +990,7 @@ async function speak(text,emotion='neutral',cb){
   const clean=cleanTTS(text);
   if(!clean){cb&&cb();return;}
   try{
-    const res=await fetch('/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,emotion,lang:selectedLang}),signal:AbortSignal.timeout(12000)});
+    const res=await fetch('/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,emotion,lang:selectedLang}),signal:AbortSignal.timeout(18000)});
     if(res.ok){
       const blob=await res.blob();
       const url=URL.createObjectURL(blob);
@@ -1020,10 +1020,14 @@ async function getReply(userMsg,mood){
         memories:buildMemories(),         // frontend fallback for first few messages
         user_id:userId                    // ties to server-side SQLite memory DB
       }),
-      signal:AbortSignal.timeout(7000)
+      signal:AbortSignal.timeout(20000)
     });
     if(res.ok)return await res.json();
-  }catch(e){console.warn('ai:',e);}
+    console.warn('ai: server returned',res.status);
+  }catch(e){
+    console.warn('ai:',e);
+    if(e.name==='TimeoutError')showBubble('Taking longer than usual... try again?');
+  }
   return null;
 }
 
@@ -1139,7 +1143,12 @@ async function processInput(text){
     emotion=result.emotion||'happy';
     if(mood==='sad'||mood==='heavy')emotion='sad';
     else if(mood==='motivated')emotion='curious';
-  }else{reply='Tell me more.';emotion='curious';}
+  }else{
+    // Groq failed — use local rule-based fallback so Kitty always responds
+    const fallbacks=['Still here. What\'s on your mind?','I heard you. Go on.','Tell me more?','Yeah? What happened?'];
+    reply=fallbacks[Math.floor(Math.random()*fallbacks.length)];
+    emotion='curious';
+  }
 
   convHistory.push({role:'assistant',content:reply});
 
@@ -1419,19 +1428,4 @@ function initRazorpay(){
     key:'rzp_test_YOUR_KEY_HERE', // 🔑 Replace with your Razorpay key
     amount:amounts[selectedPlan]||500,
     currency:'INR',
-    name:'Kitty AI Companion',
-    description:`₹${selectedPlan}/month Premium`,
-    image:'/icon-192.png',
-    handler:r=>{
-      toast('You\'re in. Welcome to Premium.');
-      localStorage.setItem('kittyPlan',selectedPlan);
-      closePremium();renderProfile();
-    },
-    prefill:{name:userName||'Friend'},
-    theme:{color:'#a855f7'}
-  };
-  new Razorpay(options).open();
-}
-</script>
-</body>
-</html>
+    name:'K
