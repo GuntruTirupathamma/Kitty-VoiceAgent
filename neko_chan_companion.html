@@ -679,6 +679,25 @@ const pick=a=>a[Math.floor(Math.random()*a.length)];
 // ── State ───────────────────────────────
 let userName='',convHistory=[],currentMood='neutral';
 let isListening=false,isTalking=false,currentAudio=null;
+
+// ── Audio unlock (Chrome autoplay policy fix) ─────────────────────
+// Chrome blocks audio.play() if not called synchronously inside a user gesture.
+// Since we await fetch() for several seconds before playing, the gesture context
+// expires. Fix: unlock the AudioContext on first tap so all future plays work.
+let _audioCtx=null;
+function unlockAudio(){
+  if(_audioCtx)return;
+  try{
+    _audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    // Play a silent buffer to fully unlock
+    const buf=_audioCtx.createBuffer(1,1,22050);
+    const src=_audioCtx.createBufferSource();
+    src.buffer=buf;src.connect(_audioCtx.destination);src.start(0);
+    _audioCtx.resume();
+  }catch(e){}
+}
+document.addEventListener('touchstart',unlockAudio,{once:false,passive:true});
+document.addEventListener('mousedown',unlockAudio,{once:false,passive:true});
 let currentTopic=null;           // tracks what they're actually talking about
 const DAILY_LIMIT=10;            // free tier: 10 messages per day
 let fd={id:'main',points:0,rank:0,streak:0,lastDate:'',chatCount:0,joinDate:new Date().toLocaleDateString(),dailyMsgs:0,dailyDate:''};
@@ -1000,7 +1019,10 @@ async function speak(text,emotion='neutral',cb){
       a.oncanplay=()=>{if(!isTalking){isTalking=true;startTalkAnim();}};
       a.onended=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
       a.onerror=(err)=>{console.warn('audio play error',err);isTalking=false;stopTalkAnim();cb&&cb();};
-      a.play().catch((e)=>{console.warn('play() blocked:',e);cb&&cb();});return;
+      // Resume AudioContext first (required after Chrome suspends it), then play
+      const doPlay=()=>a.play().catch((e)=>{console.warn('play() blocked:',e);cb&&cb();});
+      if(_audioCtx&&_audioCtx.state==='suspended'){_audioCtx.resume().then(doPlay);}else{doPlay();}
+      return;
     }else{console.warn('speak: server error',res.status);}
   }catch(e){console.warn('speak:',e);}
   cb&&cb();
@@ -1092,6 +1114,7 @@ if(SR){
 
 $('micBtn').addEventListener('click',e=>{
   e.preventDefault();
+  unlockAudio(); // unlock audio context on every mic tap
   if(isListening){stopL();return;}
   stopKitty();setTimeout(startL,180);
 });
@@ -1174,6 +1197,7 @@ const nm=()=>userName||'friend';
 function showBubble(text,thinking=false){const b=$('bubble');b.textContent=text;b.className='bubble'+(thinking?' thinking':'');}
 
 $('catWrap').addEventListener('click',async()=>{
+  unlockAudio();
   const r=pick([`You tapped me. What's up?`,`I was just thinking about you.`,`Talk to me, ${nm()}.`,`Right here. Always.`]);
   showBubble(r);await addPts(1);wiggleEars(false);speak(r,'loving');
 });
@@ -1393,33 +1417,4 @@ function renderAccessories(){
   ACCESSORIES.forEach(acc=>{
     const unlocked=fd.points>=acc.pts,equipped=equippedAcc===acc.id;
     const div=document.createElement('div');
-    div.className='acc-item'+(equipped?' equipped':'')+(unlocked?'':' locked');
-    div.innerHTML=`<span class="acc-emoji">${acc.emoji||'🚫'}</span><div class="acc-name">${acc.name}</div><div class="acc-pts">${acc.pts===0?'Free':acc.pts+' pts'}</div>`;
-    if(unlocked){div.onclick=()=>{equippedAcc=acc.id;updateCatAcc();renderAccessories();};}
-    else{div.onclick=()=>toast(`Need ${acc.pts} pts (you have ${fd.points})`);}
-    grid.appendChild(div);
-  });
-  updateCatAcc();
-}
-
-function updateCatAcc(){
-  const acc=ACCESSORIES.find(a=>a.id===equippedAcc);
-  const badge=$('catAccBadge');if(!badge)return;
-  if(acc&&acc.emoji){badge.textContent=acc.emoji;badge.style.display='block';}
-  else{badge.style.display='none';}
-}
-
-// ── PREMIUM / MONETIZATION ───────────────
-let selectedPlan='5';
-
-function showPremium(){$('premiumOverlay').classList.add('show');}
-function closePremium(){$('premiumOverlay').classList.remove('show');}
-
-function selPlan(el){
-  document.querySelectorAll('.plan-card').forEach(c=>c.classList.remove('sel'));
-  el.classList.add('sel');selectedPlan=el.dataset.plan;
-}
-
-function initRazorpay(){
-  if(typeof Razorpay==='undefined'){
-    toast('Add your Ra
+    div.className='acc-it
