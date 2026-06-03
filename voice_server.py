@@ -599,6 +599,16 @@ def speak():
         except Exception as e:
             print(f"  ✗ Edge: {e}")
 
+    # gTTS fallback — Google free TTS, works everywhere, no API key
+    try:
+        from gtts import gTTS
+        gtts_path = os.path.join(CACHE_DIR, f"gtts_{cache_key}.mp3")
+        gTTS(text=text, lang='en', slow=False).save(gtts_path)
+        print(f"  ✓ gTTS fallback")
+        return send_file(gtts_path, mimetype="audio/mpeg")
+    except Exception as e:
+        print(f"  ✗ gTTS: {e}")
+
     return jsonify({"error": "TTS failed"}), 500
 
 
@@ -722,10 +732,4 @@ if __name__ == "__main__":
     ip = socket.gethostbyname(socket.gethostname())
     # Pre-warm cache in background
     threading.Thread(target=warmup_cache, daemon=True).start()
-    print(f"\n╔══════════════════════════════════════════╗")
-    print(f"║  PC:     http://localhost:5000           ║")
-    print(f"║  Android: http://{ip}:5000         ║")
-    print(f"║  Open Chrome → Add to Home Screen        ║")
-    print(f"╚══════════════════════════════════════════╝\n")
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    print(f"\n╔═════════════════════════════════�
