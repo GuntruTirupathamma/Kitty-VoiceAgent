@@ -986,25 +986,40 @@ function stopKitty(){
   isTalking=false;stopTalkAnim();
 }
 
+function browserSpeak(clean,cb){
+  if(!window.speechSynthesis){cb&&cb();return;}
+  const utt=new SpeechSynthesisUtterance(clean);
+  utt.lang='en-IN';utt.rate=0.93;utt.pitch=1.08;utt.volume=1;
+  const vs=speechSynthesis.getVoices();
+  const v=vs.find(x=>x.lang.startsWith('en-IN'))||vs.find(x=>x.lang.startsWith('en'));
+  if(v)utt.voice=v;
+  utt.onstart=()=>{isTalking=true;startTalkAnim();};
+  utt.onend=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
+  utt.onerror=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
+  speechSynthesis.speak(utt);
+}
+
 async function speak(text,emotion='neutral',cb){
   stopKitty();
   const clean=cleanTTS(text);
   if(!clean){cb&&cb();return;}
   try{
-    const res=await fetch('/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,emotion,lang:selectedLang}),signal:AbortSignal.timeout(12000)});
+    const res=await fetch('/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,emotion,lang:selectedLang}),signal:AbortSignal.timeout(10000)});
     if(res.ok){
       const blob=await res.blob();
-      const url=URL.createObjectURL(blob);
-      const a=new Audio(url);currentAudio=a;a.volume=1.0;
-      a.oncanplay=()=>{if(!isTalking){isTalking=true;startTalkAnim();}};
-      a.onended=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
-      a.onerror=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
-      const doPlay=()=>a.play().catch(()=>{cb&&cb();});
-      if(_actx&&_actx.state==='suspended'){_actx.resume().then(doPlay);}else{doPlay();}
-      return;
+      if(blob.size>500){
+        const url=URL.createObjectURL(blob);
+        const a=new Audio(url);currentAudio=a;a.volume=1.0;
+        a.oncanplay=()=>{if(!isTalking){isTalking=true;startTalkAnim();}};
+        a.onended=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
+        a.onerror=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);browserSpeak(clean,cb);};
+        const doPlay=()=>a.play().catch(()=>{browserSpeak(clean,cb);});
+        if(_actx&&_actx.state==='suspended'){_actx.resume().then(doPlay);}else{doPlay();}
+        return;
+      }
     }
-  }catch(e){console.warn('speak:',e);}
-  cb&&cb();
+  }catch(e){console.warn('speak failed, using browser TTS:',e);}
+  browserSpeak(clean,cb);
 }
 
 // ── AI ──────────────────────────────────
