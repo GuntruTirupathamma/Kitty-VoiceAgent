@@ -1231,10 +1231,12 @@ async function saveName(){
   }
   userName=v.charAt(0).toUpperCase()+v.slice(1).toLowerCase();
   fd.joinDate=new Date().toLocaleDateString();
-  await dbP('user',{id:'main',name:userName,joinDate:fd.joinDate});
-  if(userId) fetch('/update-name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:userId,name:userName})}).catch(()=>{});
+  // Always close overlay first — don't let DB errors block the user
   $('nameOverlay').style.display='none';
-  await addPts(5);greet(true);
+  try{await dbP('user',{id:'main',name:userName,joinDate:fd.joinDate});}catch(e){console.warn('dbP saveName:',e);}
+  try{if(userId)fetch('/update-name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:userId,name:userName})}).catch(()=>{});}catch(e){}
+  try{await addPts(5);}catch(e){}
+  greet(true);
 }
 $('nameInp').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveName();}});
 
@@ -1409,7 +1411,4 @@ async function tellStory(){
   btn.textContent='🌙 Writing your story…';btn.disabled=true;
   card.classList.remove('visible');stopKitty();
   try{
-    const res=await fetch('/sleep-story',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({theme:selStoryTheme,lang:selectedLang}),signal:AbortSignal.timeout(12000)});
-    if(res.ok){
-     
+    const res=await fetch('/sleep-story',{method:'POST',headers:{'Content-Ty
