@@ -703,9 +703,9 @@ const DAILY_LIMIT=10;            // free tier: 10 messages per day
 let fd={id:'main',points:0,rank:0,streak:0,lastDate:'',chatCount:0,joinDate:new Date().toLocaleDateString(),dailyMsgs:0,dailyDate:''};
 let blinkT,tailT,breathT,mouthT;
 let notifEnabled=false;
-// API keys live server-side only — frontend sends no credentials
-// userId is set after login; empty until then
+// Auto-generate userId — no login needed
 let userId=localStorage.getItem('kittyUserId')||'';
+if(!userId){userId='u_'+Math.random().toString(36).substr(2,20);localStorage.setItem('kittyUserId',userId);}
 let selectedLang=localStorage.getItem('kittyLang')||'en-IN';
 const LANG_NAMES={'en-IN':'English','hi-IN':'हिंदी','te-IN':'తెలుగు','ta-IN':'தமிழ்'};
 const RANKS=[{min:0,n:'Stranger',c:'#777'},{min:10,n:'Friend',c:'#60a5fa'},{min:30,n:'Good Friend',c:'#34d399'},{min:60,n:'Best Friend',c:'#f59e0b'},{min:120,n:'Soul Friend',c:'#ec4899'}];
@@ -1061,7 +1061,7 @@ async function getReply(userMsg,mood){
         memories:buildMemories(),         // frontend fallback for first few messages
         user_id:userId                    // ties to server-side SQLite memory DB
       }),
-      signal:AbortSignal.timeout(20000)
+      signal:AbortSignal.timeout(55000)
     });
     if(res.ok)return await res.json();
     console.warn('ai: server returned',res.status);
@@ -1173,12 +1173,15 @@ async function processInput(text){
   setMood(mood==='neutral'?'curious':mood);
   showBubble('...', true);
 
+  // Show "waking up" after 3s so user knows it's not frozen (Render cold start)
+  const wakeTimer=setTimeout(()=>showBubble('Just a sec, waking up...', true), 3000);
+
   // ── Add to history ───────────────────────
   convHistory.push({role:'user',content:text});
-  // Keep 40 entries (20 pairs) in local memory — trim oldest pair first
   while(convHistory.length>40) convHistory.splice(0,2);
 
   const result=await getReply(text,mood);
+  clearTimeout(wakeTimer);
   let reply='',emotion='happy';
   if(result&&result.reply){
     reply=result.reply.replace(/\*+/g,'').replace(/\n+/g,' ').replace(/\s+/g,' ').trim();
@@ -1256,29 +1259,34 @@ function greet(first=false){
 
 // ── Init ────────────────────────────────
 async function init(){
-  await openDB();
+  try{await openDB();}catch(e){console.warn('DB open failed:',e);}
 
-  // ── Login gate — show once until user logs in ──
-  if(localStorage.getItem('kittyLoggedIn')!=='1'){
-    $('loginOverlay').style.display='flex';
-    updateUI();mouth('smile');eye('happy');startBlink();startBreath();tailWag(false);
-    return; // resume via doLogin() → init() after successful login
-  }
-
-  const user=await dbG('user','main');if(user){userName=user.name||'';fd.joinDate=user.joinDate||new Date().toLocaleDateString();}
-  const sfd=await dbG('friendship','main');if(sfd)Object.assign(fd,sfd);
+  // No login gate — auto userId already set above
+  try{
+    const user=await dbG('user','main');
+    if(user){userName=user.name||'';fd.joinDate=user.joinDate||new Date().toLocaleDateString();}
+  }catch(e){}
+  try{const sfd=await dbG('friendship','main');if(sfd)Object.assign(fd,sfd);}catch(e){}
   if(!fd.joinDate)fd.joinDate=new Date().toLocaleDateString();
 
-  // ── Restore conversation so Kitty remembers everything ──
-  const savedConv=await dbG('conversations','main');
-  if(savedConv&&savedConv.history&&savedConv.history.length){
-    convHistory=savedConv.history;
-    if(savedConv.topic)currentTopic=savedConv.topic;
-  }
+  try{
+    const savedConv=await dbG('conversations','main');
+    if(savedConv&&savedConv.history&&savedConv.history.length){
+      convHistory=savedConv.history;
+      if(savedConv.topic)currentTopic=savedConv.topic;
+    }
+  }catch(e){}
+
   updateUI();mouth('smile');eye('happy');startBlink();startBreath();tailWag(false);
-  notifEnabled=Notification.permission==='granted';
-  if(!userName){$('nameOverlay').style.display='flex';showBubble('What should I call you?');}
-  else{$('nameOverlay').style.display='none';await addPts(2);setTimeout(()=>greet(false),700);}
+
+  if(!userName){
+    $('nameOverlay').style.display='flex';
+    showBubble('What should I call you?');
+  } else {
+    $('nameOverlay').style.display='none';
+    try{await addPts(2);}catch(e){}
+    setTimeout(()=>greet(false),700);
+  }
 }
 init().catch(console.error);
 
@@ -1411,4 +1419,5 @@ async function tellStory(){
   btn.textContent='🌙 Writing your story…';btn.disabled=true;
   card.classList.remove('visible');stopKitty();
   try{
-    const res=await fetch('/sleep-story',{method:'POST
+    const res=await fetch('/sleep-story',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JS
