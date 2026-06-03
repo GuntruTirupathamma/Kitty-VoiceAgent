@@ -986,44 +986,25 @@ function stopKitty(){
   isTalking=false;stopTalkAnim();
 }
 
-function browserSpeak(clean,cb){
-  if(!window.speechSynthesis){cb&&cb();return;}
-  const utt=new SpeechSynthesisUtterance(clean);
-  utt.lang=selectedLang||'en-IN';utt.rate=0.93;utt.pitch=1.08;utt.volume=1;
-  const setVoice=()=>{
-    const vs=speechSynthesis.getVoices();
-    const pick=vs.find(v=>v.lang.startsWith('en-IN'))||vs.find(v=>v.lang.startsWith('en'));
-    if(pick)utt.voice=pick;
-  };
-  setVoice();
-  utt.onstart=()=>{isTalking=true;startTalkAnim();};
-  utt.onend=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
-  utt.onerror=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
-  speechSynthesis.speak(utt);
-}
-
 async function speak(text,emotion='neutral',cb){
   stopKitty();
   const clean=cleanTTS(text);
   if(!clean){cb&&cb();return;}
   try{
-    const res=await fetch('/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,emotion,lang:selectedLang}),signal:AbortSignal.timeout(10000)});
+    const res=await fetch('/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,emotion,lang:selectedLang}),signal:AbortSignal.timeout(12000)});
     if(res.ok){
       const blob=await res.blob();
-      if(blob.size>500){
-        const url=URL.createObjectURL(blob);
-        const a=new Audio(url);currentAudio=a;a.volume=1.0;
-        a.oncanplay=()=>{if(!isTalking){isTalking=true;startTalkAnim();}};
-        a.onended=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
-        a.onerror=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);browserSpeak(clean,cb);};
-        const doPlay=()=>a.play().catch(()=>{browserSpeak(clean,cb);});
-        if(_actx&&_actx.state==='suspended'){_actx.resume().then(doPlay);}else{doPlay();}
-        return;
-      }
+      const url=URL.createObjectURL(blob);
+      const a=new Audio(url);currentAudio=a;a.volume=1.0;
+      a.oncanplay=()=>{if(!isTalking){isTalking=true;startTalkAnim();}};
+      a.onended=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
+      a.onerror=()=>{isTalking=false;stopTalkAnim();cb&&cb();};
+      const doPlay=()=>a.play().catch(()=>{cb&&cb();});
+      if(_actx&&_actx.state==='suspended'){_actx.resume().then(doPlay);}else{doPlay();}
+      return;
     }
-  }catch(e){console.warn('Server TTS failed, using browser voice:',e);}
-  // Browser Speech Synthesis fallback — always works, no server needed
-  browserSpeak(clean,cb);
+  }catch(e){console.warn('speak:',e);}
+  cb&&cb();
 }
 
 // ── AI ──────────────────────────────────
@@ -1451,4 +1432,33 @@ function showPremium(){$('premiumOverlay').classList.add('show');}
 function closePremium(){$('premiumOverlay').classList.remove('show');}
 
 function selPlan(el){
-  document.querySelectorAll('.plan-card').forEach(c=>c.cl
+  document.querySelectorAll('.plan-card').forEach(c=>c.classList.remove('sel'));
+  el.classList.add('sel');selectedPlan=el.dataset.plan;
+}
+
+function initRazorpay(){
+  if(typeof Razorpay==='undefined'){
+    toast('Add your Razorpay key to activate payments.');
+    closePremium();return;
+  }
+  const amounts={'5':500,'199':19900,'499':49900};
+  const options={
+    key:'rzp_test_YOUR_KEY_HERE', // 🔑 Replace with your Razorpay key
+    amount:amounts[selectedPlan]||500,
+    currency:'INR',
+    name:'Kitty AI Companion',
+    description:`₹${selectedPlan}/month Premium`,
+    image:'/icon-192.png',
+    handler:r=>{
+      toast('You\'re in. Welcome to Premium.');
+      localStorage.setItem('kittyPlan',selectedPlan);
+      closePremium();renderProfile();
+    },
+    prefill:{name:userName||'Friend'},
+    theme:{color:'#a855f7'}
+  };
+  new Razorpay(options).open();
+}
+</script>
+</body>
+</html>
