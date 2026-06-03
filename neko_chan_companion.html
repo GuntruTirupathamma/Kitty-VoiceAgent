@@ -1221,16 +1221,22 @@ $('catWrap').addEventListener('click',async()=>{
 
 // ── Name ────────────────────────────────
 async function saveName(){
-  const v=$('nameInp').value.trim();if(!v)return;
+  unlockAudio();
+  const v=$('nameInp').value.trim();
+  if(!v){
+    $('nameInp').style.border='1px solid #ec4899';
+    $('nameInp').placeholder='Type your name first...';
+    setTimeout(()=>{$('nameInp').style.border='';$('nameInp').placeholder='Your name...';},1500);
+    return;
+  }
   userName=v.charAt(0).toUpperCase()+v.slice(1).toLowerCase();
   fd.joinDate=new Date().toLocaleDateString();
   await dbP('user',{id:'main',name:userName,joinDate:fd.joinDate});
-  // Sync name to backend so it loads on any device after login
   if(userId) fetch('/update-name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:userId,name:userName})}).catch(()=>{});
   $('nameOverlay').style.display='none';
   await addPts(5);greet(true);
 }
-$('nameInp').addEventListener('keydown',e=>{if(e.key==='Enter')saveName();});
+$('nameInp').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveName();}});
 
 // ── Greet ───────────────────────────────
 function greet(first=false){
@@ -1307,7 +1313,9 @@ async function doLogin(){
       await dbP('user',{id:'main',name:data.name,joinDate:new Date().toLocaleDateString()});
     }
     $('loginOverlay').style.display='none';
-    await init(); // resume the full init now that we're authenticated
+    // Clear flag so init() doesn't re-show login overlay, then resume
+    localStorage.setItem('kittyLoggedIn','1');
+    await init();
   }catch(e){
     $('loginErr').textContent='Could not connect. Is the server running?';
     btn.textContent='Continue';btn.disabled=false;
@@ -1404,10 +1412,4 @@ async function tellStory(){
     const res=await fetch('/sleep-story',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({theme:selStoryTheme,lang:selectedLang}),signal:AbortSignal.timeout(12000)});
     if(res.ok){
-      const d=await res.json();
-      card.textContent=d.story;card.classList.add('visible');
-      speak(d.story,'sleepy',()=>{btn.textContent='Tell me another one';btn.disabled=false;});
-      return;
-    }
-  }catch(e){console.warn('sleep story:',e);}
-  const 
+     
