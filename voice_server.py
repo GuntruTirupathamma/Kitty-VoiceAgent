@@ -727,9 +727,14 @@ def warmup_cache():
             except Exception as e:
                 print(f"  ✗ Warmup failed: {e}")
 
+
 if __name__ == "__main__":
     import socket, threading
     ip = socket.gethostbyname(socket.gethostname())
-    # Pre-warm cache in background
     threading.Thread(target=warmup_cache, daemon=True).start()
-    print(f"\n╔═════════════════════════════════�
+    print("\n=== Kitty Voice Server ===")
+    print("   PC:      http://localhost:5000")
+    print("   Android: http://" + ip + ":5000")
+    print("==========================\n")
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
