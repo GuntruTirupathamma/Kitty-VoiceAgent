@@ -23,8 +23,8 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 # Production: set these as env vars on Railway (never commit real keys)
 # Local dev: paste keys below as fallback
 EL_KEY      = os.environ.get("EL_KEY", "")
-EL_VOICE_ID = os.environ.get("EL_VOICE_ID", "cq026hCJMRqmxYMsUslq")
-EL_MODEL    = "eleven_multilingual_v2"   # smoother, more natural than turbo
+EL_VOICE_ID = os.environ.get("EL_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Bella — built-in, works on all accounts
+EL_MODEL    = "eleven_multilingual_v2"
 
 GROQ_KEY    = os.environ.get("GROQ_KEY", "")
 
@@ -538,70 +538,63 @@ def speak():
         print(f"  [cache] {text[:35]}...")
         return send_file(cache_path, mimetype="audio/mpeg")
 
-    lang     = data.get("lang") or "en-IN"
-    # Use multilingual model for Indian languages
-    tts_model = "eleven_multilingual_v2" if lang != "en-IN" else EL_MODEL
+    lang = data.get("lang") or "en-IN"
 
-    vs = EMOTION_SETTINGS.get(emotion, EMOTION_SETTINGS["neutral"])
-    print(f"  [EL stream/{emotion}/{lang}] {text[:45]}...")
-
-    try:
-        # Use STREAMING endpoint — starts sending audio immediately
-        resp = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
-            headers={"xi-api-key": key, "Content-Type": "application/json"},
-            json={
-                "text": text,
-                "model_id": tts_model,
-                "voice_settings": vs,
-                "optimize_streaming_latency": 1  # 1 = quality first, still streams fast
-            },
-            stream=True,  # stream response
-            timeout=10
-        )
-        if resp.status_code == 200:
-            # Stream directly to browser AND save to cache simultaneously
-            def generate():
-                chunks = []
-                for chunk in resp.iter_content(chunk_size=1024):
-                    if chunk:
-                        chunks.append(chunk)
-                        yield chunk
-                # Save to cache after streaming
-                try:
-                    with open(cache_path, "wb") as f:
-                        f.write(b"".join(chunks))
-                except Exception:
-                    pass
-
-            return Response(
-                generate(),
-                mimetype="audio/mpeg",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "X-Content-Type-Options": "nosniff",
-                    "Transfer-Encoding": "chunked"
-                }
-            )
-        print(f"  ✗ EL {resp.status_code}")
-    except Exception as e:
-        print(f"  ✗ EL stream: {e}")
-
-    # Edge TTS fallback
+    # ── Edge TTS PRIMARY (free, no credits needed) ──
     if EDGE_OK:
+        edge_voices = {
+            "en-IN": "en-IN-NeerjaNeural",
+            "hi-IN": "hi-IN-SwaraNeural",
+            "te-IN": "te-IN-ShrutiNeural",
+            "ta-IN": "ta-IN-PallaviNeural",
+        }
+        edge_voice = edge_voices.get(lang, "en-IN-NeerjaNeural")
         edge_path = os.path.join(CACHE_DIR, f"edge_{cache_key}.mp3")
         try:
             loop = asyncio.new_event_loop()
             async def gen():
-                c = edge_tts.Communicate(text=text, voice="en-IN-NeerjaNeural")
+                c = edge_tts.Communicate(text=text, voice=edge_voice)
                 await c.save(edge_path)
             loop.run_until_complete(gen())
             loop.close()
             if os.path.exists(edge_path):
-                print(f"  ✓ Edge TTS: {text[:35]}...")
+                # Also save to main cache path for future hits
+                import shutil
+                shutil.copy2(edge_path, cache_path)
+                print(f"  ✓ Edge TTS [{edge_voice}]: {text[:35]}...")
                 return send_file(edge_path, mimetype="audio/mpeg")
         except Exception as e:
-            print(f"  ✗ Edge: {e}")
+            print(f"  ✗ Edge TTS: {e}")
+
+    # ── ElevenLabs FALLBACK (uses credits) ──
+    if key:
+        tts_model = "eleven_multilingual_v2" if lang != "en-IN" else EL_MODEL
+        vs = EMOTION_SETTINGS.get(emotion, EMOTION_SETTINGS["neutral"])
+        print(f"  [EL fallback/{emotion}] {text[:45]}...")
+        try:
+            resp = requests.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
+                headers={"xi-api-key": key, "Content-Type": "application/json"},
+                json={"text": text, "model_id": tts_model, "voice_settings": vs},
+                stream=True, timeout=10
+            )
+            if resp.status_code == 200:
+                def generate():
+                    chunks = []
+                    for chunk in resp.iter_content(chunk_size=1024):
+                        if chunk:
+                            chunks.append(chunk)
+                            yield chunk
+                    try:
+                        with open(cache_path, "wb") as f:
+                            f.write(b"".join(chunks))
+                    except Exception:
+                        pass
+                return Response(generate(), mimetype="audio/mpeg",
+                    headers={"Cache-Control": "no-cache", "Transfer-Encoding": "chunked"})
+            print(f"  ✗ EL {resp.status_code}")
+        except Exception as e:
+            print(f"  ✗ EL: {e}")
 
     return jsonify({"error": "TTS failed"}), 500
 
@@ -729,6 +722,6 @@ if __name__ == "__main__":
     print("\n=== Kitty Voice Server ===")
     print("   PC:      http://localhost:5000")
     print("   Android: http://" + ip + ":5000")
-    print("==========================\n")
+    print("====================================================\n")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
