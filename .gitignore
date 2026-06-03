@@ -1,0 +1,7 @@
+voice_cache/
+kitty_memory.db
+*.wav
+*.mp3
+__pycache__/
+*.pyc
+.env
