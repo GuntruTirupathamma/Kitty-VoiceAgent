@@ -743,4 +743,51 @@ Entries:
             timeout=8
         )
         if resp.status_code == 200:
-            summa
+            summary = resp.json()["choices"][0]["message"]["content"].strip()
+            return jsonify({"summary": summary})
+    except Exception as e:
+        print(f"  Journal summary error: {e}")
+
+    return jsonify({"summary": f"{name}, you've been journaling. That says something. Keep going."})
+
+
+def warmup_cache():
+    """Pre-generate common phrases so they play instantly"""
+    phrases = [
+        ("I'm listening...", "curious"),
+        ("Tell me more.", "loving"),
+        ("I'm right here.", "console"),
+        ("Hmm, let me think.", "curious"),
+    ]
+    print("  Warming up voice cache...")
+    for text, emotion in phrases:
+        cache_key = hashlib.md5(f"{text}|{emotion}|{EL_VOICE_ID}".encode()).hexdigest()
+        cache_path = os.path.join(CACHE_DIR, f"{cache_key}.mp3")
+        if not os.path.exists(cache_path):
+            try:
+                vs = EMOTION_SETTINGS.get(emotion, EMOTION_SETTINGS["neutral"])
+                resp = requests.post(
+                    f"https://api.elevenlabs.io/v1/text-to-speech/{EL_VOICE_ID}/stream",
+                    headers={"xi-api-key": EL_KEY, "Content-Type": "application/json"},
+                    json={"text": text, "model_id": EL_MODEL, "voice_settings": vs, "optimize_streaming_latency": 4},
+                    timeout=8
+                )
+                if resp.status_code == 200:
+                    with open(cache_path, "wb") as f:
+                        f.write(resp.content)
+                    print(f"  ✓ Cached: '{text}'")
+            except Exception as e:
+                print(f"  ✗ Warmup failed: {e}")
+
+if __name__ == "__main__":
+    import socket, threading
+    ip = socket.gethostbyname(socket.gethostname())
+    # Pre-warm cache in background
+    threading.Thread(target=warmup_cache, daemon=True).start()
+    print(f"\n╔══════════════════════════════════════════╗")
+    print(f"║  PC:     http://localhost:5000           ║")
+    print(f"║  Android: http://{ip}:5000         ║")
+    print(f"║  Open Chrome → Add to Home Screen        ║")
+    print(f"╚══════════════════════════════════════════╝\n")
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
