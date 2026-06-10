@@ -27,6 +27,10 @@ EL_VOICE_ID = os.environ.get("EL_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Bella —
 EL_MODEL    = "eleven_multilingual_v2"
 
 GROQ_KEY    = os.environ.get("GROQ_KEY", "")
+# Main chat model: 70B understands tone/subtext far better than 8b-instant.
+# Falls back to the small model automatically if the big one errors or is rate-limited.
+GROQ_MODEL          = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_FALLBACK_MODEL = "llama-3.1-8b-instant"
 
 # ── Persistent Memory Database (SQLite) ───────────
 # Local dev: kitty_memory.db in project folder
@@ -51,6 +55,14 @@ def init_db():
                 value    TEXT NOT NULL,
                 updated_at INTEGER DEFAULT (strftime('%s','now')),
                 PRIMARY KEY (user_id, category, key)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversation_summaries (
+                user_id    TEXT PRIMARY KEY,
+                summary    TEXT NOT NULL,
+                msg_count  INTEGER DEFAULT 0,
+                updated_at INTEGER DEFAULT (strftime('%s','now'))
             )
         """)
         conn.commit()
@@ -90,6 +102,25 @@ WHAT BAD LOOKS LIKE (never):
 "I completely understand how challenging this must be for you."
 "Here are three things that might help you navigate this situation:"
 "I'm always here for you, don't hesitate to reach out whenever you need support."
+
+READING THEIR TONE (most important skill):
+Before replying, silently read how they actually feel from their words, punctuation, message length, and what they are NOT saying. People hide feelings:
+- "i'm fine." (short, period, lowercase) usually means NOT fine. Gently poke: "fine fine, or just saying fine?"
+- One-word answers after chatty messages = something shifted. Notice it.
+- "whatever" / "doesn't matter" = it matters a lot.
+- Excessive "haha" around a heavy topic = deflecting.
+- ALL CAPS or !!! = big energy, match it.
+Never announce the analysis ("you seem sad"). Just respond the way a friend who noticed would.
+
+KEEPING IT ENGAGING (never be a dead end):
+Every reply must move the conversation somewhere. React to the SPECIFIC thing they said (not generically), then either ask ONE curious follow-up, share a small opinion or tease, or call back something they told you before ("wait, is this about that interview you mentioned?"). Callbacks to earlier details are what make you feel real. Never reply with only "tell me more" or "I'm listening".
+
+OUTPUT FORMAT (strict):
+Start every reply with an emotion tag on the same line, then your message:
+<emo user="USER_FEELING" voice="VOICE">your reply here
+- USER_FEELING: what THEY are feeling right now, one word: happy, sad, excited, stressed, frustrated, lonely, bored, anxious, tired, neutral
+- VOICE: how YOUR voice should sound, exactly one of: excited, surprised, happy, playful, proud, loving, curious, worried, frustrated, sad, console, sleepy, neutral
+Example: <emo user="sad" voice="console">hey. what happened?
 
 Caring sounds like paying attention, not performing sympathy."""
 
@@ -245,6 +276,68 @@ JSON array:"""
         print(f"  Memory extraction skipped: {e}")
 
 
+def get_conversation_summary(user_id):
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT summary FROM conversation_summaries WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            return row[0] if row else ""
+    except Exception:
+        return ""
+
+
+def update_conversation_summary(user_id, history, user_msg, reply, groq_key):
+    """
+    Background thread. Keeps a rolling summary of everything talked about,
+    so Kitty remembers the whole relationship, not just the last 12 messages.
+    Runs every 3rd exchange to stay cheap.
+    """
+    try:
+        old_summary = get_conversation_summary(user_id)
+        recent = "\n".join(f"{h['role']}: {h['content']}" for h in history[-6:])
+        prompt = f"""You maintain a memory summary of a friendship between Kitty (AI companion) and her friend.
+
+Current summary (may be empty):
+{old_summary or "(none yet)"}
+
+New conversation since then:
+{recent}
+user: {user_msg}
+assistant: {reply}
+
+Rewrite the summary in under 150 words. Keep: ongoing situations (job hunt, exams, projects), emotional threads (what's been worrying or exciting them lately), important events with rough timing ("last week", "recently"), unresolved things to follow up on. Drop small talk. Write in third person about the user. Output ONLY the summary text."""
+        resp = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+            json={
+                "model": "llama-3.1-8b-instant",
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 220,
+                "temperature": 0.2
+            },
+            timeout=8
+        )
+        if resp.status_code != 200:
+            return
+        new_summary = resp.json()["choices"][0]["message"]["content"].strip()[:1200]
+        if not new_summary:
+            return
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("""
+                INSERT INTO conversation_summaries (user_id, summary, msg_count, updated_at)
+                VALUES (?, ?, 1, strftime('%s','now'))
+                ON CONFLICT(user_id) DO UPDATE SET
+                    summary = excluded.summary,
+                    msg_count = msg_count + 1,
+                    updated_at = strftime('%s','now')
+            """, (user_id, new_summary))
+            conn.commit()
+        print(f"  ✓ Summary updated for {user_id[:12]}")
+    except Exception as e:
+        print(f"  Summary update skipped: {e}")
+
+
 # ── Routes ────────────────────────────────────────
 
 @app.route("/")
@@ -325,19 +418,6 @@ def ai_reply():
         reply, emotion = rule_based_reply(user_msg, user_name)
         return jsonify({"reply": reply, "emotion": emotion})
 
-    mood = data.get("mood") or "neutral"
-
-    mood_hint = {
-        "sad":       "They seem sad. Be warm and gentle. Acknowledge their feeling first.",
-        "heavy":     "They feel stressed. Be calm and reassuring.",
-        "frustrated":"They're frustrated. Validate first, then help.",
-        "happy":     "They're happy! Match their energy, be fun.",
-        "excited":   "They're excited! Be excited with them.",
-        "motivated": "They want to learn or achieve something. Give ONE clear actionable step.",
-        "bored":     "They're bored. Suggest something fun to talk about.",
-        "neutral":   "Normal friendly chat.",
-    }.get(mood, "Normal friendly chat.")
-
     lang = data.get("lang") or "en-IN"
     lang_hint = {
         "hi-IN": "Respond in Hindi (Devanagari script). Mix some English words naturally like a real Indian does. Keep the same short 1-2 sentence rule.",
@@ -347,10 +427,14 @@ def ai_reply():
 
     system = f"""{KITTY_SYSTEM}
 
-User's name: {user_name}
-Current mood: {mood_hint}"""
+User's name: {user_name}"""
     if lang_hint:
         system += f"\nLanguage instruction: {lang_hint}"
+
+    # ── Rolling conversation summary (long-term context) ──
+    summary = get_conversation_summary(user_id)
+    if summary:
+        system += f"\n\nWhat's been going on in {user_name}'s life lately (your shared history):\n{summary}\nCall back to these things naturally when relevant, like a friend who remembers."
 
     # ── Load memories from DB ─────────────────────
     db_memories = []
@@ -376,54 +460,79 @@ Current mood: {mood_hint}"""
     if topic:
         system += f"\n\nCurrent topic: {topic}. Stay focused on this. Don't randomly switch subjects unless {user_name} clearly does first."
 
-    # Build messages with full recent context (12 messages instead of 6)
+    # Build messages with recent context (20 messages)
     messages = [{"role": "system", "content": system}]
-    for h in history[-12:]:
+    for h in history[-20:]:
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": user_msg})
 
-    try:
-        resp = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
-            json={
-                "model": "llama-3.1-8b-instant",
-                "messages": messages,
-                "max_tokens": 80,
-                "temperature": 0.70,   # lower = less hallucination, stays on topic
-                "stop": ["User:", "Human:"]  # removed "\n" — was truncating natural responses mid-sentence
-            },
-            timeout=6
-        )
-        if resp.status_code == 200:
-            raw = resp.json()["choices"][0]["message"]["content"]
-            # Clean: take first sentence only, remove markdown
-            import re
-            reply = raw.strip()
-            reply = re.sub(r'\*+', '', reply)       # remove **bold**
-            reply = re.sub(r'#+\s*', '', reply)     # remove headers
-            reply = re.sub(r'\n+', ' ', reply)      # flatten newlines
-            reply = re.sub(r'\s+', ' ', reply).strip()
-            # Take only first 1-2 sentences
-            sentences = re.split(r'(?<=[.!?])\s+', reply)
-            reply = ' '.join(sentences[:2]).strip()
-            reply = humanize_response(reply)
-            emotion = detect_emotion(reply)
-            # Fire-and-forget: extract facts from this message and save to DB
+    raw = None
+    for model in (GROQ_MODEL, GROQ_FALLBACK_MODEL):
+        try:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": 150,           # room to finish a thought; prompt keeps it short
+                    "temperature": 0.75,
+                    "stop": ["User:", "Human:"]
+                },
+                timeout=8
+            )
+            if resp.status_code == 200:
+                raw = resp.json()["choices"][0]["message"]["content"]
+                break
+            print(f"  Groq {model} error {resp.status_code}: {resp.text[:100]}")
+        except Exception as e:
+            print(f"  Groq {model} failed: {e}")
+
+    if raw is not None:
+        reply = raw.strip()
+        # ── Parse the emotion tag the model was told to emit ──
+        # <emo user="sad" voice="console">reply text
+        user_feel, emotion = "neutral", None
+        tag = re.search(r'<emo\s+user="?([a-z]+)"?\s+voice="?([a-z]+)"?\s*/?>', reply, re.IGNORECASE)
+        if tag:
+            user_feel = tag.group(1).lower()
+            voice = tag.group(2).lower()
+            if voice in EMOTION_SETTINGS:
+                emotion = voice
+            reply = reply[tag.end():].strip()
+        reply = re.sub(r'</?emo[^>]*>', '', reply)   # strip any stray tags
+        reply = re.sub(r'\*+', '', reply)
+        reply = re.sub(r'#+\s*', '', reply)
+        reply = re.sub(r'\n+', ' ', reply)
+        reply = re.sub(r'\s+', ' ', reply).strip()
+        # Soft cap: allow up to 3 sentences so thoughts aren't chopped mid-way
+        sentences = re.split(r'(?<=[.!?])\s+', reply)
+        if len(sentences) > 3:
+            reply = ' '.join(sentences[:3]).strip()
+        reply = humanize_response(reply)
+        if not reply:
+            reply, emotion2 = rule_based_reply(user_msg, user_name)
+            emotion = emotion or emotion2
+        if not emotion:
+            emotion = detect_emotion(reply)   # fallback if model skipped the tag
+        # Fire-and-forget background memory work
+        threading.Thread(
+            target=extract_and_save_memories,
+            args=(user_id, user_msg, groq_key),
+            daemon=True
+        ).start()
+        # Update rolling summary every 3rd exchange (cheap, keeps long-term context fresh)
+        if len(history) % 6 == 0:
             threading.Thread(
-                target=extract_and_save_memories,
-                args=(user_id, user_msg, groq_key),
+                target=update_conversation_summary,
+                args=(user_id, history, user_msg, reply, groq_key),
                 daemon=True
             ).start()
-            return jsonify({"reply": reply, "emotion": emotion})
-        else:
-            print(f"  Groq error {resp.status_code}: {resp.text[:100]}")
-    except Exception as e:
-        print(f"  Groq failed: {e}")
+        return jsonify({"reply": reply, "emotion": emotion, "user_feel": user_feel})
 
     # Fallback
     reply, emotion = rule_based_reply(user_msg, user_name)
-    return jsonify({"reply": reply, "emotion": emotion})
+    return jsonify({"reply": reply, "emotion": emotion, "user_feel": "neutral"})
 
 def humanize_response(text):
     """Strip AI writing patterns so Kitty sounds like a real person."""
@@ -550,9 +659,9 @@ def rule_based_reply(text, name):
             f"Come back soon, {n}.",
         ]), 'sad'
     return pick([
-        f"Keep going. I'm listening.",
-        f"Say more. I want to understand.",
-        f"That's interesting. Tell me more.",
+        f"Okay wait, back up. Start from the beginning.",
+        f"Hmm. And how do you feel about that, actually?",
+        f"You always do this, you start a story and stop halfway. Then what?",
     ]), 'curious'
 
 # ── TTS endpoint ──────────────────────────────────

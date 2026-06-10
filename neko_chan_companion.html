@@ -1030,7 +1030,7 @@ async function getReply(userMsg,mood){
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         message:userMsg,
-        history:convHistory.slice(-12),   // 12 messages = strong context window
+        history:convHistory.slice(-20),   // 20 messages = strong context window
         name:userName||'friend',
         mood,
         lang:selectedLang,
@@ -1170,10 +1170,13 @@ async function processInput(text){
   let reply='',emotion='happy';
   if(result&&result.reply){
     reply=result.reply.replace(/\*+/g,'').replace(/\n+/g,' ').replace(/\s+/g,' ').trim();
+    // Server's LLM now reads tone properly — trust its emotion, don't override with keyword mood
     emotion=result.emotion||'happy';
-    if(mood==='sad'||mood==='heavy')emotion='sad';
-    else if(mood==='motivated')emotion='curious';
-  }else{reply='Tell me more.';emotion='curious';}
+    // Avatar reflects how the USER feels (server-detected from their words)
+    const uf=result.user_feel||'neutral';
+    const ufMap={sad:'sad',lonely:'sad',anxious:'heavy',stressed:'heavy',tired:'heavy',frustrated:'heavy',excited:'excited',happy:'happy',bored:'curious'};
+    if(ufMap[uf])setMood(ufMap[uf]);
+  }else{reply='Hmm, say that again? I zoned out for a second.';emotion='curious';}
 
   convHistory.push({role:'assistant',content:reply});
 
