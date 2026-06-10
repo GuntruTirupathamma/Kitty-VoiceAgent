@@ -489,6 +489,14 @@ body{background:#0d0820;display:flex;align-items:center;justify-content:center;}
         <div class="prow-arrow">›</div>
       </div>
 
+      <div class="prow" onclick="logout()">
+        <div class="prow-left">
+          <div class="prow-icon">🚪</div>
+          <div><div class="prow-title">Log Out</div><div class="prow-sub">Sign out of this device</div></div>
+        </div>
+        <div class="prow-arrow">›</div>
+      </div>
+
       <div style="padding:16px;text-align:center;">
         <div style="font-size:10px;color:rgba(255,255,255,.2);font-weight:700;">Kitty v9.0 · Made with 💕</div>
       </div>
@@ -681,7 +689,7 @@ const pick=a=>a[Math.floor(Math.random()*a.length)];
 let userName='',convHistory=[],currentMood='neutral';
 let isListening=false,isTalking=false,currentAudio=null;
 let currentTopic=null;           // tracks what they're actually talking about
-const DAILY_LIMIT=10;            // free tier: 10 messages per day
+const DAILY_LIMIT=20;            // free tier: 20 messages per day
 let fd={id:'main',points:0,rank:0,streak:0,lastDate:'',chatCount:0,joinDate:new Date().toLocaleDateString(),dailyMsgs:0,dailyDate:''};
 let blinkT,tailT,breathT,mouthT;
 let notifEnabled=false;
@@ -885,6 +893,14 @@ async function changeName(){
     await dbP('user',{id:'main',name:userName,joinDate:fd.joinDate});
     renderProfile();toast(`Name updated to ${userName}.`);
   }
+}
+
+async function logout(){
+  if(!confirm('Log out of Kitty on this device? Your memories stay saved to your account.'))return;
+  localStorage.removeItem('kittyUserId');
+  localStorage.removeItem('kittyLoggedIn');
+  userId='';
+  location.reload(); // reload shows the login screen again
 }
 
 async function clearMemory(){
@@ -1146,9 +1162,9 @@ async function processInput(text){
   const todayStr=new Date().toDateString();
   if(fd.dailyDate!==todayStr){fd.dailyDate=todayStr;fd.dailyMsgs=0;}
   if((fd.dailyMsgs||0)>=DAILY_LIMIT){
-    const msg="That's 10 for today. Upgrade to keep going.";
+    const msg="That's 20 for today. Upgrade to keep going.";
     showBubble(msg);
-    speak("That's your 10 for today. Want to keep talking? Upgrade.", 'loving');
+    speak("That's your 20 for today. Want to keep talking? Upgrade.", 'loving');
     $('micLbl').textContent='0 left today';
     setTimeout(()=>showPremium(), 2200); // show upgrade sheet after Kitty speaks
     return;
