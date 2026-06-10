@@ -1010,10 +1010,12 @@ async function speak(text,emotion='neutral',cb){
       if(blob.size>500){
         const url=URL.createObjectURL(blob);
         const a=new Audio(url);currentAudio=a;a.volume=1.0;
+        let fellBack=false,finished=false;
+        const fallbackOnce=()=>{if(fellBack||finished)return;fellBack=true;isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);browserSpeak(clean,cb);};
         a.oncanplay=()=>{if(!isTalking){isTalking=true;startTalkAnim();}};
-        a.onended=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
-        a.onerror=()=>{isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);browserSpeak(clean,cb);};
-        const doPlay=()=>a.play().catch(()=>{browserSpeak(clean,cb);});
+        a.onended=()=>{finished=true;isTalking=false;stopTalkAnim();URL.revokeObjectURL(url);currentAudio=null;cb&&cb();};
+        a.onerror=fallbackOnce;
+        const doPlay=()=>a.play().catch(fallbackOnce);
         if(_actx&&_actx.state==='suspended'){_actx.resume().then(doPlay);}else{doPlay();}
         return;
       }
@@ -1235,7 +1237,7 @@ function greet(first=false){
   else{text=pick([`${name}. You're here.`,`Hey. Good.`]);emotion='loving';}
   showBubble(text);setMood(emotion);
   speak(text,emotion,()=>{
-    setTimeout(()=>{if(!isTalking&&!isListening){const p=`${name}, how are you today?`;showBubble(p);speak(p,'curious');}},18000);
+    setTimeout(()=>{if(!isTalking&&!isListening){const p=`${name}, how are you today?`;showBubble(p);}},18000);
   });
 }
 

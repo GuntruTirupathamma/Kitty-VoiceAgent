@@ -692,26 +692,21 @@ def speak():
         print(f"  [EL/{emotion}] {text[:45]}...")
         try:
             resp = requests.post(
-                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
                 headers={"xi-api-key": key, "Content-Type": "application/json"},
-                json={"text": text, "model_id": tts_model, "voice_settings": vs,
-                      "optimize_streaming_latency": 1},
-                stream=True, timeout=10
+                json={"text": text, "model_id": tts_model, "voice_settings": vs},
+                timeout=15
             )
-            if resp.status_code == 200:
-                def generate():
-                    chunks = []
-                    for chunk in resp.iter_content(chunk_size=1024):
-                        if chunk:
-                            chunks.append(chunk)
-                            yield chunk
-                    try:
-                        with open(cache_path, "wb") as f:
-                            f.write(b"".join(chunks))
-                    except Exception:
-                        pass
-                return Response(generate(), mimetype="audio/mpeg",
-                    headers={"Cache-Control": "no-cache", "Transfer-Encoding": "chunked"})
+            if resp.status_code == 200 and len(resp.content) > 500:
+                # Buffer the FULL audio before sending. Streaming through Render's
+                # free tier truncated mid-play, causing the browser to error and
+                # replay the phrase via fallback TTS (the "repeats 3 times" bug).
+                try:
+                    with open(cache_path, "wb") as f:
+                        f.write(resp.content)
+                except Exception:
+                    pass
+                return Response(resp.content, mimetype="audio/mpeg")
             print(f"  ✗ EL {resp.status_code}")
         except Exception as e:
             print(f"  ✗ EL: {e}")
@@ -719,7 +714,7 @@ def speak():
     # ── Edge TTS fallback ──
     if EDGE_OK:
         edge_voices = {
-            "en-IN": "en-IN-NeerjaNeural",
+            "en-IN": "en-IN-NeerjaExpressiveNeural",
             "hi-IN": "hi-IN-SwaraNeural",
             "te-IN": "te-IN-ShrutiNeural",
             "ta-IN": "ta-IN-PallaviNeural",
