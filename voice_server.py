@@ -155,15 +155,42 @@ except:
 
 # ── Generate icons ────────────────────────────────
 def make_icon(size):
-    """Generate a simple pink cat icon as PNG"""
+    """Generate the Kitty app icon: smiling cat face on purple"""
     try:
         from PIL import Image, ImageDraw
-        img = Image.new('RGB', (size, size), '#a855f7')
+        S = size
+        # Full purple canvas: maskable icons get cropped to a circle by the
+        # launcher, so the background must fill the whole square
+        img = Image.new('RGB', (S, S), '#a855f7')
         d = ImageDraw.Draw(img)
-        # Simple cat face
-        cx, cy = size//2, size//2
-        r = size//3
-        d.ellipse([cx-r, cy-r, cx+r, cy+r], fill='#ffb6c8')
+        u = S/100.0
+        cx, cy = S/2, S*0.55
+        fw, fh = 30*u, 26*u
+        PINK='#ffc4d6'; DARK='#3b1d54'; INNER='#f49ac1'
+        # ears
+        d.polygon([(cx-fw*0.9,cy-fh*0.25),(cx-fw*1.02,cy-fh*1.5),(cx-fw*0.15,cy-fh*0.95)], fill=PINK)
+        d.polygon([(cx+fw*0.9,cy-fh*0.25),(cx+fw*1.02,cy-fh*1.5),(cx+fw*0.15,cy-fh*0.95)], fill=PINK)
+        d.polygon([(cx-fw*0.76,cy-fh*0.45),(cx-fw*0.86,cy-fh*1.24),(cx-fw*0.32,cy-fh*0.88)], fill=INNER)
+        d.polygon([(cx+fw*0.76,cy-fh*0.45),(cx+fw*0.86,cy-fh*1.24),(cx+fw*0.32,cy-fh*0.88)], fill=INNER)
+        # face
+        d.ellipse([cx-fw,cy-fh,cx+fw,cy+fh], fill=PINK)
+        # happy closed eyes
+        ew = 6.5*u
+        for ex in (cx-11*u, cx+11*u):
+            d.arc([ex-ew,cy-7*u,ex+ew,cy+3*u], start=180, end=360, fill=DARK, width=max(2,int(2.4*u)))
+        # blush
+        d.ellipse([cx-21*u,cy+1*u,cx-12*u,cy+8*u], fill='#ff8fb3')
+        d.ellipse([cx+12*u,cy+1*u,cx+21*u,cy+8*u], fill='#ff8fb3')
+        # nose + mouth
+        d.polygon([(cx-2.8*u,cy+3.5*u),(cx+2.8*u,cy+3.5*u),(cx,cy+7.5*u)], fill=DARK)
+        lw=max(2,int(2*u))
+        d.arc([cx-6.5*u,cy+4.5*u,cx,cy+12*u], start=0, end=180, fill=DARK, width=lw)
+        d.arc([cx,cy+4.5*u,cx+6.5*u,cy+12*u], start=0, end=180, fill=DARK, width=lw)
+        # whiskers
+        for sgn in (-1,1):
+            for dy,ang in ((2*u,-3),(7*u,0),(12*u,3)):
+                x1=cx+sgn*fw*0.92; x2=cx+sgn*(fw+9*u)
+                d.line([(x1,cy+dy),(x2,cy+dy+ang*u*0.5)], fill=DARK, width=lw)
         buf = BytesIO()
         img.save(buf, 'PNG')
         buf.seek(0)
